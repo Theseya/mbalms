@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Discipline> Disciplines => Set<Discipline>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Grade> Grades => Set<Grade>();
+    public DbSet<GradeHistoryEntry> GradeHistory => Set<GradeHistoryEntry>();
     public DbSet<Survey> Surveys => Set<Survey>();
     public DbSet<SurveyQuestion> SurveyQuestions => Set<SurveyQuestion>();
     public DbSet<SurveyQuestionOption> SurveyQuestionOptions => Set<SurveyQuestionOption>();
@@ -43,6 +44,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.Property(x => x.Name).HasMaxLength(100);
             e.HasIndex(x => x.Name).IsUnique();
+            e.ToTable(t => t.HasCheckConstraint("CK_Periods_EndNotBeforeStart",
+                "\"StartDate\" IS NULL OR \"EndDate\" IS NULL OR \"EndDate\" >= \"StartDate\""));
         });
 
         b.Entity<Group>(e =>
@@ -51,6 +54,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasIndex(x => x.Name).IsUnique();
             e.HasIndex(x => x.Status);
             e.HasOne(x => x.Program).WithMany().HasForeignKey(x => x.ProgramId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("CK_Groups_EndNotBeforeStart",
+                "\"StartDate\" IS NULL OR \"EndDate\" IS NULL OR \"EndDate\" >= \"StartDate\""));
         });
 
         b.Entity<Student>(e =>
@@ -102,6 +107,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.ToTable(t => t.HasCheckConstraint("CK_Grades_ValueRange", "\"Value\" >= 0 AND \"Value\" <= 100"));
         });
 
+        b.Entity<GradeHistoryEntry>(e =>
+        {
+            e.ToTable("GradeHistory");
+            e.HasIndex(x => new { x.StudentId, x.DisciplineId, x.PeriodId, x.ChangedAt });
+            e.HasIndex(x => x.GradeId);
+            e.HasOne(x => x.ChangedBy).WithMany().HasForeignKey(x => x.ChangedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         b.Entity<Survey>(e =>
         {
             e.Property(x => x.Title).HasMaxLength(300);
@@ -112,12 +125,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasOne(x => x.Discipline).WithMany().HasForeignKey(x => x.DisciplineId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Questions).WithOne(q => q.Survey).HasForeignKey(q => q.SurveyId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Responses).WithOne(r => r.Survey).HasForeignKey(r => r.SurveyId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("CK_Surveys_ClosesAfterOpens",
+                "\"OpensAt\" IS NULL OR \"ClosesAt\" IS NULL OR \"ClosesAt\" > \"OpensAt\""));
         });
 
         b.Entity<SurveyQuestion>(e =>
         {
             e.Property(x => x.Text).HasMaxLength(1000);
             e.HasMany(x => x.Options).WithOne(o => o.Question).HasForeignKey(o => o.QuestionId).OnDelete(DeleteBehavior.Cascade);
+            e.ToTable(t => t.HasCheckConstraint("CK_SurveyQuestions_ScaleRange",
+                "\"ScaleMin\" IS NULL OR \"ScaleMax\" IS NULL OR \"ScaleMin\" < \"ScaleMax\""));
         });
 
         b.Entity<SurveyQuestionOption>(e =>
@@ -135,6 +152,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<SurveyAnswer>(e =>
         {
             e.Property(x => x.TextValue).HasMaxLength(4000);
+            e.HasIndex(x => new { x.ResponseId, x.QuestionId }).IsUnique();
+            e.ToTable(t => t.HasCheckConstraint("CK_SurveyAnswers_SingleValue",
+                "num_nonnulls(\"IntValue\", \"OptionId\", \"TextValue\") <= 1"));
             e.HasOne(x => x.Question).WithMany().HasForeignKey(x => x.QuestionId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Option).WithMany().HasForeignKey(x => x.OptionId).OnDelete(DeleteBehavior.Restrict);
         });

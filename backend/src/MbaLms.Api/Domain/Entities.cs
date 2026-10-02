@@ -101,6 +101,27 @@ public class Grade
     public DateTimeOffset? PublishedAt { get; set; }
 }
 
+/// <summary>
+/// Append-only record of a grade change. Grade, student, discipline and period ids are plain columns
+/// (no foreign keys) so the history outlives a deleted draft.
+/// </summary>
+public class GradeHistoryEntry
+{
+    public Guid Id { get; set; }
+    public Guid GradeId { get; set; }
+    public Guid StudentId { get; set; }
+    public Guid DisciplineId { get; set; }
+    public Guid PeriodId { get; set; }
+    public GradeChangeAction Action { get; set; }
+    public int? OldValue { get; set; }
+    public int? NewValue { get; set; }
+    public GradeStatus? OldStatus { get; set; }
+    public GradeStatus? NewStatus { get; set; }
+    public Guid ChangedByUserId { get; set; }
+    public AppUser? ChangedBy { get; set; }
+    public DateTimeOffset ChangedAt { get; set; }
+}
+
 public class Survey
 {
     public Guid Id { get; set; }

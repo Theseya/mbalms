@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api, query } from '../../api/client'
-import type { Discipline, Grade, Group, Period, Student } from '../../api/types'
+import type { Discipline, Grade, GradeHistoryEntry, GradeStatus, Group, Period, Student } from '../../api/types'
 import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select } from '../../components/ui'
 import { formatInstant } from '../../lib/format'
 import { parseGrade } from '../../lib/grades'
@@ -31,6 +31,7 @@ export function GradesPage() {
   const list = useLoad(() => api.get<Grade[]>(`/api/manager/grades${q}`), q)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [form, setForm] = useState<Form | null>(null)
+  const [historyFor, setHistoryFor] = useState<Grade | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
@@ -175,6 +176,7 @@ export function GradesPage() {
                       {g.publishedAt && <small className="muted block">{formatInstant(g.publishedAt)}</small>}
                     </td>
                     <td className="actions-col">
+                      <button type="button" className="btn btn-small" onClick={() => setHistoryFor(g)}>{t('grades.history')}</button>
                       {editable && (
                         <>
                           <button type="button" className="btn btn-small" onClick={() => open(g)}>{t('common.edit')}</button>
@@ -238,6 +240,49 @@ export function GradesPage() {
           </form>
         </Modal>
       )}
+
+      {historyFor && <GradeHistoryModal grade={historyFor} onClose={() => setHistoryFor(null)} />}
     </>
+  )
+}
+
+function GradeHistoryModal({ grade, onClose }: { grade: Grade; onClose: () => void }) {
+  const { t } = useTranslation()
+  const history = useLoad(() => api.get<GradeHistoryEntry[]>(`/api/manager/grades/${grade.id}/history`), `history-${grade.id}`)
+  const value = (v: number | null) => (v === null ? '—' : String(v))
+  const status = (s: GradeStatus | null) => (s === null ? '—' : t(`gradeStatus.${s}`))
+
+  return (
+    <Modal wide onClose={onClose}
+      title={t('grades.historyTitle', { student: grade.studentName, discipline: grade.disciplineName, period: grade.periodName })}>
+      <p className="muted">{t('grades.historyNote')}</p>
+      <ErrorBanner error={history.error} />
+      {history.loading && !history.data ? <Loading /> : !history.data?.length ? <Empty /> : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('grades.changedAt')}</th>
+                <th>{t('grades.action')}</th>
+                <th>{t('grades.valueShort')}</th>
+                <th>{t('common.status')}</th>
+                <th>{t('grades.changedBy')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.data.map((h) => (
+                <tr key={h.id}>
+                  <td data-label={t('grades.changedAt')}>{formatInstant(h.changedAt)}</td>
+                  <td data-label={t('grades.action')}>{t(`gradeAction.${h.action}`)}</td>
+                  <td data-label={t('grades.valueShort')}>{value(h.oldValue)} → {value(h.newValue)}</td>
+                  <td data-label={t('common.status')}>{status(h.oldStatus)} → {status(h.newStatus)}</td>
+                  <td data-label={t('grades.changedBy')}>{h.changedBy ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   )
 }

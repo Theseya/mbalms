@@ -2,6 +2,7 @@ export type Role = 'Manager' | 'Student'
 export type GroupStatus = 'Active' | 'Archived'
 export type LessonFormat = 'Offline' | 'Online' | 'Hybrid'
 export type GradeStatus = 'Draft' | 'Published'
+export type GradeChangeAction = 'Created' | 'Updated' | 'Published' | 'Unpublished' | 'Deleted'
 export type SurveyType = 'TeachingEvaluation' | 'ServiceSurvey'
 export type SurveyStatus = 'Draft' | 'Open' | 'Closed'
 export type QuestionType = 'Scale' | 'SingleChoice' | 'Text'
@@ -99,6 +100,18 @@ export interface Grade {
   status: GradeStatus
   updatedAt: Instant
   publishedAt: Instant | null
+}
+
+export interface GradeHistoryEntry {
+  id: string
+  gradeId: string
+  action: GradeChangeAction
+  oldValue: number | null
+  newValue: number | null
+  oldStatus: GradeStatus | null
+  newStatus: GradeStatus | null
+  changedBy: string | null
+  changedAt: Instant
 }
 
 export interface SurveyOption {

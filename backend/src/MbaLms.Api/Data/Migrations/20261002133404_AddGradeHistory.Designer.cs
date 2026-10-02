@@ -3,6 +3,7 @@ using System;
 using MbaLms.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MbaLms.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002133404_AddGradeHistory")]
+    partial class AddGradeHistory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -44,10 +47,7 @@ namespace MbaLms.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Periods", t =>
-                        {
-                            t.HasCheckConstraint("CK_Periods_EndNotBeforeStart", "\"StartDate\" IS NULL OR \"EndDate\" IS NULL OR \"EndDate\" >= \"StartDate\"");
-                        });
+                    b.ToTable("Periods");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.AppUser", b =>
@@ -273,10 +273,7 @@ namespace MbaLms.Api.Data.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Groups", t =>
-                        {
-                            t.HasCheckConstraint("CK_Groups_EndNotBeforeStart", "\"StartDate\" IS NULL OR \"EndDate\" IS NULL OR \"EndDate\" >= \"StartDate\"");
-                        });
+                    b.ToTable("Groups");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.Lesson", b =>
@@ -471,10 +468,7 @@ namespace MbaLms.Api.Data.Migrations
 
                     b.HasIndex("GroupId", "Status");
 
-                    b.ToTable("Surveys", t =>
-                        {
-                            t.HasCheckConstraint("CK_Surveys_ClosesAfterOpens", "\"OpensAt\" IS NULL OR \"ClosesAt\" IS NULL OR \"ClosesAt\" > \"OpensAt\"");
-                        });
+                    b.ToTable("Surveys");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.SurveyAnswer", b =>
@@ -505,13 +499,9 @@ namespace MbaLms.Api.Data.Migrations
 
                     b.HasIndex("QuestionId");
 
-                    b.HasIndex("ResponseId", "QuestionId")
-                        .IsUnique();
+                    b.HasIndex("ResponseId");
 
-                    b.ToTable("SurveyAnswers", t =>
-                        {
-                            t.HasCheckConstraint("CK_SurveyAnswers_SingleValue", "num_nonnulls(\"IntValue\", \"OptionId\", \"TextValue\") <= 1");
-                        });
+                    b.ToTable("SurveyAnswers");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.SurveyQuestion", b =>
@@ -549,10 +539,7 @@ namespace MbaLms.Api.Data.Migrations
 
                     b.HasIndex("SurveyId");
 
-                    b.ToTable("SurveyQuestions", t =>
-                        {
-                            t.HasCheckConstraint("CK_SurveyQuestions_ScaleRange", "\"ScaleMin\" IS NULL OR \"ScaleMax\" IS NULL OR \"ScaleMin\" < \"ScaleMax\"");
-                        });
+                    b.ToTable("SurveyQuestions");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.SurveyQuestionOption", b =>

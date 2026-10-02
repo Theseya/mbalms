@@ -1,14 +1,15 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SurveyQuestion } from '../api/types'
+import type { Grade, GradeHistoryEntry, SurveyQuestion } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { setLanguage } from '../i18n'
 import en from '../i18n/en'
 import ru from '../i18n/ru'
 import { parseGrade } from '../lib/grades'
 import { LoginPage } from '../pages/LoginPage'
+import { GradesPage } from '../pages/manager/GradesPage'
 import { validateAnswers } from '../lib/surveyValidation'
 
 function keys(obj: object, prefix = ''): string[] {
@@ -91,5 +92,44 @@ describe('LoginPage', () => {
     expect(document.documentElement.lang).toBe('en')
 
     act(() => setLanguage('ru'))
+  })
+})
+
+describe('GradesPage history', () => {
+  const grade: Grade = {
+    id: 'g1', studentId: 's1', studentName: 'Иванова Мария', groupId: 'gr1', groupName: 'MBA-2026',
+    disciplineId: 'd1', disciplineName: 'Финансы', periodId: 'p1', periodName: 'Семестр 1',
+    value: 80, status: 'Published', updatedAt: '2026-10-02T10:00:00Z', publishedAt: '2026-10-02T10:00:00Z',
+  }
+  const history: GradeHistoryEntry[] = [
+    { id: 'h2', gradeId: 'g1', action: 'Updated', oldValue: 70, newValue: 80, oldStatus: 'Published',
+      newStatus: 'Published', changedBy: 'manager@mba.local', changedAt: '2026-10-02T10:00:00Z' },
+    { id: 'h1', gradeId: 'g1', action: 'Created', oldValue: null, newValue: 70, oldStatus: null,
+      newStatus: 'Draft', changedBy: 'manager@mba.local', changedAt: '2026-10-01T09:00:00Z' },
+  ]
+
+  beforeEach(() => {
+    setLanguage('ru')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const body = url.includes('/history') ? history : url.includes('/api/manager/grades') ? [grade] : []
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows who changed the grade, old and new values and statuses', async () => {
+    render(<MemoryRouter><GradesPage /></MemoryRouter>)
+    await userEvent.click(await screen.findByRole('button', { name: 'История' }))
+
+    const dialog = await screen.findByRole('dialog', { name: /История оценки: Иванова Мария · Финансы · Семестр 1/ })
+    expect(await within(dialog).findByText('Изменена')).toBeInTheDocument()
+    expect(within(dialog).getByText('Создана')).toBeInTheDocument()
+    expect(within(dialog).getByText('70 → 80')).toBeInTheDocument()
+    expect(within(dialog).getByText('— → 70')).toBeInTheDocument()
+    expect(within(dialog).getByText('— → Черновик')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('manager@mba.local')).toHaveLength(2)
   })
 })

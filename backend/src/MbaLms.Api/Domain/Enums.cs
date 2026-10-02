@@ -25,6 +25,15 @@ public enum GradeStatus
     Published = 1
 }
 
+public enum GradeChangeAction
+{
+    Created = 0,
+    Updated = 1,
+    Published = 2,
+    Unpublished = 3,
+    Deleted = 4
+}
+
 public enum SurveyType
 {
     TeachingEvaluation = 0,

@@ -24,8 +24,12 @@ public record BulkPublishRequest([Required(ErrorMessage = FieldCodes.Required)] 
 
 public record GradePublishedPayload(Guid GradeId, string DisciplineName, string PeriodName);
 
+public record GradeHistoryDto(Guid Id, Guid GradeId, GradeChangeAction Action, int? OldValue, int? NewValue,
+    GradeStatus? OldStatus, GradeStatus? NewStatus, string? ChangedBy, DateTimeOffset ChangedAt);
+
 [Route("api/manager/grades")]
-public class GradesController(AppDbContext db, AppTime time, NotificationService notifications) : ManagerControllerBase(db)
+public class GradesController(AppDbContext db, AppTime time, NotificationService notifications, CurrentUser currentUser)
+    : ManagerControllerBase(db)
 {
     [HttpGet]
     public async Task<List<GradeDto>> List([FromQuery] Guid? groupId, [FromQuery] Guid? periodId, [FromQuery] Guid? disciplineId,
@@ -45,6 +49,22 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     [HttpGet("{id:guid}")]
     public async Task<GradeDto> Get(Guid id, CancellationToken ct) =>
         ToDto(await Query().FirstOrDefaultAsync(g => g.Id == id, ct) ?? throw AppException.NotFound());
+
+    /// <summary>
+    /// History for the grade's student, discipline and period, newest first. Includes entries of
+    /// previously deleted drafts for the same combination. Available for archived groups too.
+    /// </summary>
+    [HttpGet("{id:guid}/history")]
+    public async Task<List<GradeHistoryDto>> History(Guid id, CancellationToken ct)
+    {
+        var grade = await Db.Grades.AsNoTracking().FirstOrDefaultAsync(g => g.Id == id, ct) ?? throw AppException.NotFound();
+        return await Db.GradeHistory.AsNoTracking()
+            .Where(h => h.StudentId == grade.StudentId && h.DisciplineId == grade.DisciplineId && h.PeriodId == grade.PeriodId)
+            .OrderByDescending(h => h.ChangedAt).ThenByDescending(h => h.Id)
+            .Select(h => new GradeHistoryDto(h.Id, h.GradeId, h.Action, h.OldValue, h.NewValue,
+                h.OldStatus, h.NewStatus, h.ChangedBy!.Email, h.ChangedAt))
+            .ToListAsync(ct);
+    }
 
     [HttpPost]
     public async Task<ActionResult<GradeDto>> Create(GradeCreateRequest r, CancellationToken ct)
@@ -68,17 +88,22 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
             UpdatedAt = time.UtcNow
         };
         Db.Grades.Add(grade);
+        Record(grade, GradeChangeAction.Created, null, null);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = grade.Id }, await Get(grade.Id, ct));
     }
 
-    /// <summary>Changing a published grade keeps it published and notifies the student again.</summary>
+    /// <summary>
+    /// Changing a published grade keeps it published and notifies the student again;
+    /// changing a draft does not notify.
+    /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<GradeDto> Update(Guid id, GradeUpdateRequest r, CancellationToken ct)
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Value != r.Value)
         {
+            Record(grade, GradeChangeAction.Updated, grade.Value, grade.Status, newValue: r.Value);
             grade.Value = r.Value!.Value;
             grade.UpdatedAt = time.UtcNow;
             if (grade.Status == GradeStatus.Published)
@@ -121,6 +146,7 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Status == GradeStatus.Draft) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
+        Record(grade, GradeChangeAction.Unpublished, grade.Value, grade.Status, newStatus: GradeStatus.Draft);
         grade.Status = GradeStatus.Draft;
         grade.PublishedAt = null;
         grade.UpdatedAt = time.UtcNow;
@@ -133,6 +159,7 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Status == GradeStatus.Published) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
+        Record(grade, GradeChangeAction.Deleted, grade.Value, grade.Status, deleted: true);
         Db.Grades.Remove(grade);
         await Db.SaveChangesAsync(ct);
         return NoContent();
@@ -140,11 +167,34 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
 
     private void PublishGrade(Grade grade)
     {
+        Record(grade, GradeChangeAction.Published, grade.Value, grade.Status, newStatus: GradeStatus.Published);
         grade.Status = GradeStatus.Published;
         grade.PublishedAt = time.UtcNow;
         grade.UpdatedAt = time.UtcNow;
         Notify(grade);
     }
+
+    /// <summary>
+    /// Adds a history entry to the same SaveChanges as the change itself. Must be called before the grade is mutated:
+    /// new value and status default to the grade's current ones.
+    /// </summary>
+    private void Record(Grade grade, GradeChangeAction action, int? oldValue, GradeStatus? oldStatus,
+        int? newValue = null, GradeStatus? newStatus = null, bool deleted = false) =>
+        Db.GradeHistory.Add(new GradeHistoryEntry
+        {
+            Id = Guid.CreateVersion7(),
+            GradeId = grade.Id,
+            StudentId = grade.StudentId,
+            DisciplineId = grade.DisciplineId,
+            PeriodId = grade.PeriodId,
+            Action = action,
+            OldValue = oldValue,
+            NewValue = deleted ? null : newValue ?? grade.Value,
+            OldStatus = oldStatus,
+            NewStatus = deleted ? null : newStatus ?? grade.Status,
+            ChangedByUserId = currentUser.UserId,
+            ChangedAt = time.UtcNow
+        });
 
     private void Notify(Grade grade) =>
         notifications.Add(grade.Student!.UserId, NotificationType.GradePublished,
