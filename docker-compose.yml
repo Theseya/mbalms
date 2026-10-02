@@ -28,6 +28,9 @@ services:
     environment:
       ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-mbalms};Username=${POSTGRES_USER:-mbalms};Password=${POSTGRES_PASSWORD}
       Database__MigrateOnStartup: "true"
+      # The API is reachable only through the web (nginx) container, so its X-Forwarded-* headers are trusted.
+      ForwardedHeaders__Enabled: "true"
+      Auth__CookieSecurePolicy: ${AUTH_COOKIE_SECURE_POLICY:-SameAsRequest}
       App__TimeZone: ${APP_TIMEZONE:-Europe/Moscow}
       Seed__ProgramName: ${PROGRAM_NAME:-MBA}
       Seed__ManagerEmail: ${MANAGER_EMAIL:-}

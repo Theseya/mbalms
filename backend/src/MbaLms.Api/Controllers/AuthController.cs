@@ -32,6 +32,10 @@ public class AuthController(
     AppDbContext db,
     AppTime time) : ControllerBase
 {
+    private static readonly AppUser DummyUser = new();
+    private static readonly Lazy<string> DummyHash =
+        new(() => new PasswordHasher<AppUser>().HashPassword(DummyUser, Guid.NewGuid().ToString()));
+
     /// <summary>
     /// Issues an antiforgery token. The client sends it in the X-XSRF-TOKEN header on every
     /// state-changing request. Must be requested again after login/logout (token is bound to the user).
@@ -51,7 +55,12 @@ public class AuthController(
     public async Task<ActionResult<MeDto>> Login(LoginRequest request)
     {
         var user = await users.FindByEmailAsync(request.Email.Trim());
-        if (user is null) throw new AppException(StatusCodes.Status401Unauthorized, ErrorCodes.InvalidCredentials);
+        if (user is null)
+        {
+            // Spend the same hashing time as for a real account so response time does not reveal registered emails.
+            users.PasswordHasher.VerifyHashedPassword(DummyUser, DummyHash.Value, request.Password);
+            throw new AppException(StatusCodes.Status401Unauthorized, ErrorCodes.InvalidCredentials);
+        }
 
         var result = await signIn.PasswordSignInAsync(user, request.Password, isPersistent: false, lockoutOnFailure: true);
         if (result.IsLockedOut) throw new AppException(StatusCodes.Status401Unauthorized, ErrorCodes.LockedOut);

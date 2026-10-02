@@ -3,7 +3,9 @@ using System.Threading.RateLimiting;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -44,20 +46,28 @@ var keysPath = config["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(keysPath))
     builder.Services.AddDataProtection().SetApplicationName("MbaLms").PersistKeysToFileSystem(new DirectoryInfo(keysPath));
 
+// "Always" in production behind HTTPS; "SameAsRequest" lets plain-HTTP local runs work.
+var cookieSecurePolicy = config.GetValue("Auth:CookieSecurePolicy", CookieSecurePolicy.SameAsRequest);
+
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
+// Sessions are re-checked against the security stamp, so a password reset or account deletion ends existing sessions.
+builder.Services.Configure<SecurityStampValidatorOptions>(o =>
+    o.ValidationInterval = config.GetValue("Auth:SessionValidationInterval", TimeSpan.FromMinutes(1)));
 builder.Services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "mbalms.auth";
     o.Cookie.HttpOnly = true;
     o.Cookie.SameSite = SameSiteMode.Strict;
-    o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    o.Cookie.SecurePolicy = cookieSecurePolicy;
     o.ExpireTimeSpan = TimeSpan.FromHours(8);
     o.SlidingExpiration = true;
     // API: answer with status codes instead of redirecting to a login page.
     o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
     o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
 });
+// Deny by default: an endpoint is public only with an explicit [AllowAnonymous].
 builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPolicy(Roles.Manager, p => p.RequireRole(Roles.Manager))
     .AddPolicy(Roles.Student, p => p.RequireRole(Roles.Student));
 
@@ -66,8 +76,20 @@ builder.Services.AddAntiforgery(o =>
     o.HeaderName = "X-XSRF-TOKEN";
     o.Cookie.Name = "mbalms.af";
     o.Cookie.SameSite = SameSiteMode.Strict;
-    o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    o.Cookie.SecurePolicy = cookieSecurePolicy;
 });
+
+// Only behind a trusted reverse proxy that is the sole way to reach the API (as in docker-compose).
+var useForwardedHeaders = config.GetValue("ForwardedHeaders:Enabled", false);
+if (useForwardedHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(o =>
+    {
+        o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        o.KnownIPNetworks.Clear();
+        o.KnownProxies.Clear();
+    });
+}
 
 var loginPermitLimit = config.GetValue("RateLimiting:LoginPermitsPerMinute", 20);
 builder.Services.AddRateLimiter(o =>
@@ -106,12 +128,13 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+if (useForwardedHeaders) app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
     app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "MBA Mini-LMS API"));
 }
 

@@ -32,6 +32,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Seed:ManagerEmail", ManagerEmail);
         builder.UseSetting("Seed:ManagerPassword", ManagerPassword);
         builder.UseSetting("RateLimiting:LoginPermitsPerMinute", "10000");
+        builder.UseSetting("Auth:SessionValidationInterval", "00:00:00");
         builder.ConfigureLogging(logging =>
             logging.AddProvider(new FileErrorLoggerProvider(Path.Combine(AppContext.BaseDirectory, "test-server-errors.log"))));
     }
