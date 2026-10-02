@@ -1,0 +1,238 @@
+export type Role = 'Manager' | 'Student'
+export type GroupStatus = 'Active' | 'Archived'
+export type LessonFormat = 'Offline' | 'Online' | 'Hybrid'
+export type GradeStatus = 'Draft' | 'Published'
+export type SurveyType = 'TeachingEvaluation' | 'ServiceSurvey'
+export type SurveyStatus = 'Draft' | 'Open' | 'Closed'
+export type QuestionType = 'Scale' | 'SingleChoice' | 'Text'
+export type NotificationType = 'SurveyAssigned' | 'ScheduleChanged' | 'GradePublished'
+
+/** Wall-clock date-time in the application time zone, e.g. "2026-10-05T10:00:00". */
+export type LocalDateTime = string
+/** ISO instant in UTC. */
+export type Instant = string
+/** ISO date, e.g. "2026-09-01". */
+export type DateOnly = string
+
+export interface Me {
+  id: string
+  email: string
+  role: Role
+  displayName: string
+  groupName: string | null
+  timeZone: string
+}
+
+export interface Group {
+  id: string
+  name: string
+  startDate: DateOnly | null
+  endDate: DateOnly | null
+  status: GroupStatus
+  archivedAt: Instant | null
+  studentCount: number
+}
+
+export interface Student {
+  id: string
+  lastName: string
+  firstName: string
+  middleName: string | null
+  fullName: string
+  email: string
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+}
+
+export interface Teacher {
+  id: string
+  lastName: string
+  firstName: string
+  middleName: string | null
+  fullName: string
+  email: string | null
+}
+
+export interface Discipline {
+  id: string
+  name: string
+  description: string | null
+}
+
+export interface Period {
+  id: string
+  name: string
+  startDate: DateOnly | null
+  endDate: DateOnly | null
+}
+
+export interface Lesson {
+  id: string
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+  disciplineId: string
+  disciplineName: string
+  teacherId: string
+  teacherName: string
+  startsAt: Instant
+  endsAt: Instant
+  startsAtLocal: LocalDateTime
+  endsAtLocal: LocalDateTime
+  format: LessonFormat | null
+  location: string | null
+  comment: string | null
+}
+
+export interface Grade {
+  id: string
+  studentId: string
+  studentName: string
+  groupId: string
+  groupName: string
+  disciplineId: string
+  disciplineName: string
+  periodId: string
+  periodName: string
+  value: number
+  status: GradeStatus
+  updatedAt: Instant
+  publishedAt: Instant | null
+}
+
+export interface SurveyOption {
+  id: string
+  order: number
+  text: string
+}
+
+export interface SurveyQuestion {
+  id: string
+  order: number
+  text: string
+  type: QuestionType
+  isRequired: boolean
+  scaleMin: number | null
+  scaleMax: number | null
+  options: SurveyOption[]
+}
+
+export interface SurveyListItem {
+  id: string
+  type: SurveyType
+  title: string
+  status: SurveyStatus
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+  teacherName: string | null
+  disciplineName: string | null
+  opensAtLocal: LocalDateTime | null
+  closesAtLocal: LocalDateTime | null
+  questionCount: number
+  responseCount: number
+  studentCount: number
+  createdAt: Instant
+}
+
+export interface SurveyDetail {
+  id: string
+  type: SurveyType
+  title: string
+  description: string | null
+  status: SurveyStatus
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+  teacherId: string | null
+  teacherName: string | null
+  disciplineId: string | null
+  disciplineName: string | null
+  opensAtLocal: LocalDateTime | null
+  closesAtLocal: LocalDateTime | null
+  publishedAt: Instant | null
+  responseCount: number
+  questions: SurveyQuestion[]
+}
+
+export interface ResponseAnswer {
+  questionId: string
+  intValue: number | null
+  optionId: string | null
+  optionText: string | null
+  textValue: string | null
+}
+
+export interface SurveyResponse {
+  id: string
+  studentId: string
+  studentName: string
+  groupName: string
+  submittedAt: Instant
+  answers: ResponseAnswer[]
+}
+
+export interface StudentLesson {
+  id: string
+  disciplineName: string
+  teacherName: string
+  startsAt: Instant
+  endsAt: Instant
+  startsAtLocal: LocalDateTime
+  endsAtLocal: LocalDateTime
+  format: LessonFormat | null
+  location: string | null
+  comment: string | null
+}
+
+export interface StudentGrade {
+  id: string
+  disciplineName: string
+  periodName: string
+  value: number
+  publishedAt: Instant | null
+}
+
+export interface StudentSurveyListItem {
+  id: string
+  type: SurveyType
+  title: string
+  status: SurveyStatus
+  teacherName: string | null
+  disciplineName: string | null
+  opensAtLocal: LocalDateTime | null
+  closesAtLocal: LocalDateTime | null
+  submitted: boolean
+  submittedAt: Instant | null
+  canRespond: boolean
+}
+
+export interface StudentAnswer {
+  questionId: string
+  intValue: number | null
+  optionId: string | null
+  textValue: string | null
+}
+
+export interface StudentSurveyDetail extends StudentSurveyListItem {
+  description: string | null
+  questions: SurveyQuestion[]
+  myAnswers: StudentAnswer[]
+}
+
+export interface Dashboard {
+  nextLesson: StudentLesson | null
+  upcomingLessons: StudentLesson[]
+  pendingSurveys: number
+  unreadNotifications: number
+  recentGrades: StudentGrade[]
+}
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  payload: Record<string, string>
+  createdAt: Instant
+  readAt: Instant | null
+}

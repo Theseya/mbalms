@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/backend/" />
+  <Folder Name="/backend/src/">
+    <Project Path="backend/src/MbaLms.Api/MbaLms.Api.csproj" />
+  </Folder>
+  <Folder Name="/backend/tests/">
+    <Project Path="backend/tests/MbaLms.Api.Tests/MbaLms.Api.Tests.csproj" />
+  </Folder>
+</Solution>
