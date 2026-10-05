@@ -309,6 +309,11 @@ namespace MbaLms.Api.Data.Migrations
                     b.Property<DateTimeOffset>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<Guid>("TeacherId")
                         .HasColumnType("uuid");
 
@@ -316,13 +321,15 @@ namespace MbaLms.Api.Data.Migrations
 
                     b.HasIndex("DisciplineId");
 
-                    b.HasIndex("TeacherId");
-
                     b.HasIndex("GroupId", "StartsAt");
+
+                    b.HasIndex("TeacherId", "StartsAt");
 
                     b.ToTable("Lessons", t =>
                         {
                             t.HasCheckConstraint("CK_Lessons_EndsAfterStart", "\"EndsAt\" > \"StartsAt\"");
+
+                            t.HasCheckConstraint("CK_Lessons_Status", "\"Status\" IN ('Scheduled', 'Cancelled')");
                         });
                 });
 
@@ -529,8 +536,16 @@ namespace MbaLms.Api.Data.Migrations
                     b.Property<int?>("ScaleMax")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ScaleMaxLabel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int?>("ScaleMin")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ScaleMinLabel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<Guid>("SurveyId")
                         .HasColumnType("uuid");

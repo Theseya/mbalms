@@ -23,18 +23,39 @@ public record StudentRequest(
 [Route("api/manager/students")]
 public class StudentsController(AppDbContext db, UserManager<AppUser> users) : ManagerControllerBase(db)
 {
+    /// <summary>Students of active groups by default; a group filter also shows archived groups.</summary>
     [HttpGet]
-    public async Task<List<StudentDto>> List([FromQuery] Guid? groupId, [FromQuery] bool includeArchived = false,
+    public async Task<PagedResult<StudentDto>> List(
+        [FromQuery] Guid? groupId,
+        [FromQuery] bool includeArchived = false,
+        [FromQuery] [MaxLength(Paging.MaxSearchLength, ErrorMessage = FieldCodes.MaxLength)] string? search = null,
+        [FromQuery] [Range(1, int.MaxValue, ErrorMessage = FieldCodes.Range)] int page = 1,
+        [FromQuery] [Range(1, Paging.MaxPageSize, ErrorMessage = FieldCodes.Range)] int pageSize = Paging.DefaultPageSize,
         CancellationToken ct = default)
     {
-        var q = Db.Students.AsNoTracking();
-        if (groupId is not null) q = q.Where(s => s.GroupId == groupId);
-        else if (!includeArchived) q = q.Where(s => s.Group!.Status == GroupStatus.Active);
-        return await q.OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
+        var q = Filter(Db.Students.AsNoTracking(), groupId, includeArchived, search);
+        var total = await q.CountAsync(ct);
+        var items = await q.OrderBy(s => s.LastName).ThenBy(s => s.FirstName).ThenBy(s => s.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(s => new StudentDto(s.Id, s.LastName, s.FirstName, s.MiddleName,
                 s.MiddleName == null ? s.LastName + " " + s.FirstName : s.LastName + " " + s.FirstName + " " + s.MiddleName,
                 s.Email, s.GroupId, s.Group!.Name, s.Group.Status))
             .ToListAsync(ct);
+        return new PagedResult<StudentDto>(items, total, page, pageSize);
+    }
+
+    /// <summary>Shared by the list and the Excel export. Every search word must match a name part or the email.</summary>
+    internal static IQueryable<Student> Filter(IQueryable<Student> q, Guid? groupId, bool includeArchived, string? search)
+    {
+        if (groupId is not null) q = q.Where(s => s.GroupId == groupId);
+        else if (!includeArchived) q = q.Where(s => s.Group!.Status == GroupStatus.Active);
+        foreach (var term in (search ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var p = ContainsPattern(term);
+            q = q.Where(s => EF.Functions.ILike(s.LastName, p) || EF.Functions.ILike(s.FirstName, p)
+                             || (s.MiddleName != null && EF.Functions.ILike(s.MiddleName, p)) || EF.Functions.ILike(s.Email, p));
+        }
+        return q;
     }
 
     [HttpGet("{id:guid}")]

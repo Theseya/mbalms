@@ -6,9 +6,9 @@ import ru from './ru'
 export const LANGUAGES = ['ru', 'en'] as const
 export type Language = (typeof LANGUAGES)[number]
 
-const STORAGE_KEY = 'mbalms.lang'
+export const STORAGE_KEY = 'mbalms.lang'
 
-function initialLanguage(): Language {
+export function initialLanguage(): Language {
   const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
   return stored === 'en' ? 'en' : 'ru'
 }
@@ -17,6 +17,7 @@ void i18n.use(initReactI18next).init({
   resources: { ru: { translation: ru }, en: { translation: en } },
   lng: initialLanguage(),
   fallbackLng: 'ru',
+  returnEmptyString: false,
   interpolation: { escapeValue: false },
 })
 

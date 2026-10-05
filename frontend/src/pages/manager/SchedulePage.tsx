@@ -1,14 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api, query } from '../../api/client'
-import type { Discipline, Group, Lesson, LessonFormat, Teacher } from '../../api/types'
+import type { Discipline, Group, Lesson, LessonFormat, LessonOverlap, LessonStatus, Teacher } from '../../api/types'
 import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select } from '../../components/ui'
-import { formatLocalDate, formatLocalTime, getAppTimeZone } from '../../lib/format'
+import { formatLocalDate, formatLocalDateTime, formatLocalTime, getAppTimeZone } from '../../lib/format'
 import { groupLabel } from '../../lib/labels'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
 const FORMATS: LessonFormat[] = ['Offline', 'Online', 'Hybrid']
+const STATUSES: LessonStatus[] = ['Scheduled', 'Cancelled']
 
 interface Form {
   id: string | null
@@ -21,6 +23,17 @@ interface Form {
   format: string
   location: string
   comment: string
+  status: LessonStatus
+}
+
+/** Query for the informational overlap check, or '' while the form is incomplete. */
+function overlapQuery(form: Form | null): string {
+  if (!form || !form.date || !form.start || !form.end || form.end <= form.start) return ''
+  if (form.status !== 'Scheduled' || (!form.groupId && !form.teacherId)) return ''
+  return query({
+    startsAt: `${form.date}T${form.start}`, endsAt: `${form.date}T${form.end}`,
+    groupId: form.groupId, teacherId: form.teacherId, excludeId: form.id,
+  })
 }
 
 export function SchedulePage() {
@@ -38,6 +51,10 @@ export function SchedulePage() {
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
+  const oq = overlapQuery(form)
+  const overlaps = useLoad(
+    () => (oq ? api.get<LessonOverlap[]>(`/api/manager/lessons/overlaps${oq}`) : Promise.resolve([])), oq)
 
   const open = (l?: Lesson) => {
     setError(null)
@@ -52,6 +69,7 @@ export function SchedulePage() {
       format: l?.format ?? '',
       location: l?.location ?? '',
       comment: l?.comment ?? '',
+      status: l?.status ?? 'Scheduled',
     })
   }
 
@@ -69,6 +87,7 @@ export function SchedulePage() {
       format: form.format || null,
       location: form.location.trim() || null,
       comment: form.comment.trim() || null,
+      status: form.status,
     }
     try {
       if (form.id) await api.put(`/api/manager/lessons/${form.id}`, body)
@@ -83,7 +102,15 @@ export function SchedulePage() {
   }
 
   const onDelete = async (l: Lesson) => {
-    if (!window.confirm(t('common.confirmDelete'))) return
+    const ok = await confirm({
+      title: t('schedule.confirmDeleteTitle'),
+      message: t('schedule.confirmDelete', {
+        discipline: l.disciplineName, date: formatLocalDateTime(l.startsAtLocal), group: l.groupName,
+      }),
+      confirmLabel: t('common.delete'),
+      danger: true,
+    })
+    if (!ok) return
     setActionError(null)
     try {
       await api.del(`/api/manager/lessons/${l.id}`)
@@ -131,12 +158,13 @@ export function SchedulePage() {
                 <th>{t('common.teacher')}</th>
                 <th>{t('schedule.format')}</th>
                 <th>{t('schedule.location')}</th>
+                <th>{t('schedule.status')}</th>
                 <th className="actions-col">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {list.data.map((l) => (
-                <tr key={l.id}>
+                <tr key={l.id} className={l.status === 'Cancelled' ? 'lesson-cancelled' : undefined}>
                   <td data-label={t('schedule.date')}>{formatLocalDate(l.startsAtLocal)}</td>
                   <td data-label={t('schedule.time')}>{formatLocalTime(l.startsAtLocal)}–{formatLocalTime(l.endsAtLocal)}</td>
                   <td data-label={t('common.group')}>
@@ -146,6 +174,9 @@ export function SchedulePage() {
                   <td data-label={t('common.teacher')}>{l.teacherName}</td>
                   <td data-label={t('schedule.format')}>{l.format ? t(`format.${l.format}`) : '—'}</td>
                   <td data-label={t('schedule.location')} className="wrap">{l.location ?? '—'}</td>
+                  <td data-label={t('schedule.status')}>
+                    <Badge tone={l.status === 'Cancelled' ? 'red' : 'green'}>{t(`lessonStatus.${l.status}`)}</Badge>
+                  </td>
                   <td className="actions-col">
                     {l.groupStatus === 'Active' && (
                       <>
@@ -192,6 +223,28 @@ export function SchedulePage() {
               </Field>
             </div>
             <small className="hint">{t('schedule.timeZoneNote', { tz: getAppTimeZone() })}</small>
+            {!!overlaps.data?.length && (
+              <div className="alert alert-warning" role="status">
+                <strong>{t('schedule.overlapTitle')}</strong>
+                <ul>
+                  {overlaps.data.map((o) => (
+                    <li key={o.id}>
+                      {formatLocalTime(o.startsAtLocal)}–{formatLocalTime(o.endsAtLocal)} · {o.disciplineName} · {o.groupName} · {o.teacherName}
+                      {' '}({[o.sameGroup && t('schedule.overlapGroup'), o.sameTeacher && t('schedule.overlapTeacher')].filter(Boolean).join(', ')})
+                    </li>
+                  ))}
+                </ul>
+                <small>{t('schedule.overlapNote')}</small>
+              </div>
+            )}
+            <Field label={t('schedule.status')} hint={form.status === 'Cancelled' ? t('schedule.cancelledHint') : undefined}>
+              {(id, d) => (
+                <select id={id} aria-describedby={d} value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value as LessonStatus })}>
+                  {STATUSES.map((s) => <option key={s} value={s}>{t(`lessonStatus.${s}`)}</option>)}
+                </select>
+              )}
+            </Field>
             <Field label={t('schedule.format')}>
               {(id) => (
                 <select id={id} value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })}>
@@ -212,6 +265,7 @@ export function SchedulePage() {
           </form>
         </Modal>
       )}
+      {dialog}
     </>
   )
 }

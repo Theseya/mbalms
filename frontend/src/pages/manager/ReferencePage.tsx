@@ -2,8 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../../api/client'
 import type { Discipline, Period, Teacher } from '../../api/types'
-import { Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader } from '../../components/ui'
+import {
+  Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField,
+} from '../../components/ui'
 import { formatLocalDate } from '../../lib/format'
+import { PAGE_SIZE, matchesSearch, pageOf } from '../../lib/paging'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
@@ -14,6 +18,7 @@ interface FieldDef {
   label: string
   kind: FieldKind
   required?: boolean
+  maxLength?: number
 }
 
 interface ColumnDef<T> {
@@ -29,6 +34,10 @@ interface ReferenceConfig<T> {
   exportUrl?: string
   fields: FieldDef[]
   columns: ColumnDef<T>[]
+  /** Shown in the delete confirmation. */
+  itemName: (item: T) => string
+  searchValues: (item: T) => (string | null | undefined)[]
+  searchPlaceholder?: string
 }
 
 type Values = Record<string, string>
@@ -40,7 +49,12 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
+  const filtered = list.data?.filter((item) => matchesSearch(search, ...config.searchValues(item))) ?? []
+  const shown = pageOf(filtered, page)
 
   const emptyValues = () => Object.fromEntries(config.fields.map((f) => [f.name, '']))
   const open = (item?: T) => {
@@ -71,7 +85,13 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
   }
 
   const onDelete = async (item: T) => {
-    if (!window.confirm(t('common.confirmDelete'))) return
+    const ok = await confirm({
+      title: t('reference.confirmDeleteTitle'),
+      message: t('reference.confirmDelete', { name: config.itemName(item) }),
+      confirmLabel: t('common.delete'),
+      danger: true,
+    })
+    if (!ok) return
     setActionError(null)
     try {
       await api.del(`${config.endpoint}/${item.id}`)
@@ -92,8 +112,12 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
           </>
         }
       />
+      <div className="filters">
+        <SearchField value={search} placeholder={config.searchPlaceholder}
+          onChange={(v) => { setSearch(v); setPage(1) }} />
+      </div>
       <ErrorBanner error={list.error ?? actionError} />
-      {list.loading && !list.data ? <Loading /> : !list.data?.length ? <Empty /> : (
+      {list.loading && !list.data ? <Loading /> : !shown.items.length ? <Empty /> : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -103,7 +127,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
               </tr>
             </thead>
             <tbody>
-              {list.data.map((item) => (
+              {shown.items.map((item) => (
                 <tr key={item.id}>
                   {config.columns.map((c) => <td key={c.label} data-label={c.label}>{c.value(item)}</td>)}
                   <td className="actions-col">
@@ -116,6 +140,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
           </table>
         </div>
       )}
+      <Pagination page={shown.page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} />
 
       {editing && (
         <Modal title={editing.id ? config.editLabel : config.newLabel} onClose={() => setEditing(null)}>
@@ -129,6 +154,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
                     'aria-describedby': d,
                     value: editing.values[f.name],
                     required: f.required,
+                    maxLength: f.maxLength,
                     onChange: (e: { target: { value: string } }) =>
                       setEditing({ ...editing, values: { ...editing.values, [f.name]: e.target.value } }),
                   }
@@ -140,6 +166,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
           </form>
         </Modal>
       )}
+      {dialog}
     </>
   )
 }
@@ -155,15 +182,18 @@ export function TeachersPage() {
         endpoint: '/api/manager/teachers',
         exportUrl: '/api/manager/exports/teachers',
         fields: [
-          { name: 'lastName', label: t('common.lastName'), kind: 'text', required: true },
-          { name: 'firstName', label: t('common.firstName'), kind: 'text', required: true },
-          { name: 'middleName', label: t('common.middleName'), kind: 'text' },
-          { name: 'email', label: t('common.email'), kind: 'email' },
+          { name: 'lastName', label: t('common.lastName'), kind: 'text', required: true, maxLength: 100 },
+          { name: 'firstName', label: t('common.firstName'), kind: 'text', required: true, maxLength: 100 },
+          { name: 'middleName', label: t('common.middleName'), kind: 'text', maxLength: 100 },
+          { name: 'email', label: t('common.email'), kind: 'email', maxLength: 256 },
         ],
         columns: [
           { label: t('students.fullName'), value: (x) => x.fullName },
           { label: t('common.email'), value: (x) => x.email ?? '—' },
         ],
+        itemName: (x) => x.fullName,
+        searchValues: (x) => [x.fullName, x.email],
+        searchPlaceholder: t('students.searchPlaceholder'),
       }}
     />
   )
@@ -180,13 +210,15 @@ export function DisciplinesPage() {
         endpoint: '/api/manager/disciplines',
         exportUrl: '/api/manager/exports/disciplines',
         fields: [
-          { name: 'name', label: t('common.name'), kind: 'text', required: true },
-          { name: 'description', label: t('common.description'), kind: 'textarea' },
+          { name: 'name', label: t('common.name'), kind: 'text', required: true, maxLength: 200 },
+          { name: 'description', label: t('common.description'), kind: 'textarea', maxLength: 2000 },
         ],
         columns: [
           { label: t('common.name'), value: (x) => x.name },
           { label: t('common.description'), value: (x) => x.description ?? '—' },
         ],
+        itemName: (x) => x.name,
+        searchValues: (x) => [x.name, x.description],
       }}
     />
   )
@@ -201,8 +233,10 @@ export function PeriodsPage() {
         newLabel: t('periods.new'),
         editLabel: t('periods.editTitle'),
         endpoint: '/api/manager/periods',
+        itemName: (x) => x.name,
+        searchValues: (x) => [x.name],
         fields: [
-          { name: 'name', label: t('common.name'), kind: 'text', required: true },
+          { name: 'name', label: t('common.name'), kind: 'text', required: true, maxLength: 100 },
           { name: 'startDate', label: t('common.startDate'), kind: 'date' },
           { name: 'endDate', label: t('common.endDate'), kind: 'date' },
         ],

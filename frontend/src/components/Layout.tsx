@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { LANGUAGES, currentLanguage, setLanguage, type Language } from '../i18n'
+import { onUnreadChanged } from '../lib/unread'
 
 export function LanguageSwitcher() {
   const { t, i18n } = useTranslation()
@@ -30,6 +31,7 @@ const managerLinks = [
   ['/manager/disciplines', 'nav.disciplines'],
   ['/manager/periods', 'nav.periods'],
   ['/manager/schedule', 'nav.schedule'],
+  ['/manager/gradebook', 'nav.gradebook'],
   ['/manager/grades', 'nav.grades'],
   ['/manager/surveys', 'nav.surveys'],
 ] as const
@@ -60,9 +62,11 @@ export function Layout() {
         .catch(() => undefined)
     void load()
     const timer = window.setInterval(load, 60_000)
+    const unsubscribe = onUnreadChanged(() => void load())
     return () => {
       active = false
       window.clearInterval(timer)
+      unsubscribe()
     }
   }, [isStudent, location.pathname])
 
@@ -88,7 +92,8 @@ export function Layout() {
         <span className="brand">{t('app.title')}</span>
         <div className="topbar-right">
           {isStudent && (
-            <NavLink to="/student/notifications" className="bell" aria-label={t('nav.notifications')}>
+            <NavLink to="/student/notifications" className="bell"
+              aria-label={unread > 0 ? t('nav.notificationsUnread', { count: String(unread) }) : t('nav.notifications')}>
               <span aria-hidden="true">🔔</span>
               {unread > 0 && <span className="bell-count">{unread}</span>}
             </NavLink>

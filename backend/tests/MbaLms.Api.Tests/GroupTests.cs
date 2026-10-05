@@ -27,12 +27,14 @@ public class GroupTests(ApiFactory factory) : TestBase(factory)
         Assert.DoesNotContain(active, g => g.Id == group.Id);
         Assert.Contains(archivedList, g => g.Id == group.Id && g.StudentCount == 1);
 
-        Assert.Single(await manager.GetJsonAsync<List<StudentDto>>($"/api/manager/students?groupId={group.Id}"));
+        Assert.Single((await manager.GetJsonAsync<PagedResult<StudentDto>>($"/api/manager/students?groupId={group.Id}")).Items);
         Assert.Contains(await manager.GetJsonAsync<List<LessonDto>>($"/api/manager/lessons?groupId={group.Id}"), l => l.Id == lesson.Id);
         Assert.Contains(await manager.GetJsonAsync<List<GradeDto>>($"/api/manager/grades?groupId={group.Id}"), g => g.Id == grade.Id);
 
         // Current lists are not mixed with archived data.
-        Assert.DoesNotContain(await manager.GetJsonAsync<List<StudentDto>>("/api/manager/students"), s => s.Id == student.Id);
+        Assert.Empty((await manager.GetJsonAsync<PagedResult<StudentDto>>($"/api/manager/students?search={student.Email}")).Items);
+        Assert.Single((await manager.GetJsonAsync<PagedResult<StudentDto>>(
+            $"/api/manager/students?search={student.Email}&includeArchived=true")).Items);
     }
 
     [Fact]

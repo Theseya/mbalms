@@ -95,7 +95,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasOne(x => x.Group).WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Discipline).WithMany().HasForeignKey(x => x.DisciplineId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Teacher).WithMany().HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
-            e.ToTable(t => t.HasCheckConstraint("CK_Lessons_EndsAfterStart", "\"EndsAt\" > \"StartsAt\""));
+            e.HasIndex(x => new { x.TeacherId, x.StartsAt });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Lessons_EndsAfterStart", "\"EndsAt\" > \"StartsAt\"");
+                t.HasCheckConstraint("CK_Lessons_Status", "\"Status\" IN ('Scheduled', 'Cancelled')");
+            });
         });
 
         b.Entity<Grade>(e =>
@@ -132,6 +137,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<SurveyQuestion>(e =>
         {
             e.Property(x => x.Text).HasMaxLength(1000);
+            e.Property(x => x.ScaleMinLabel).HasMaxLength(100);
+            e.Property(x => x.ScaleMaxLabel).HasMaxLength(100);
             e.HasMany(x => x.Options).WithOne(o => o.Question).HasForeignKey(o => o.QuestionId).OnDelete(DeleteBehavior.Cascade);
             e.ToTable(t => t.HasCheckConstraint("CK_SurveyQuestions_ScaleRange",
                 "\"ScaleMin\" IS NULL OR \"ScaleMax\" IS NULL OR \"ScaleMin\" < \"ScaleMax\""));

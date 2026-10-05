@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Group, SurveyListItem, SurveyStatus, SurveyType } from '../../api/types'
-import { Badge, Empty, ErrorBanner, ExportButton, Field, Loading, PageHeader, Select } from '../../components/ui'
+import { Badge, Empty, ErrorBanner, ExportButton, Field, Loading, PageHeader, Select, type ConfirmOptions } from '../../components/ui'
 import { formatLocalDateTime } from '../../lib/format'
-import { groupLabel, surveyStatusTone as statusTone } from '../../lib/labels'
+import { groupLabel, statusConfirm, surveyStatusTone as statusTone } from '../../lib/labels'
+import { useConfirm } from '../../lib/useConfirm'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
 const TYPES: SurveyType[] = ['TeachingEvaluation', 'ServiceSurvey']
@@ -20,9 +21,10 @@ export function SurveysPage() {
   const q = query({ groupId, type, status })
   const list = useLoad(() => api.get<SurveyListItem[]>(`/api/manager/surveys${q}`), q)
   const [actionError, setActionError] = useState<ApiError | null>(null)
+  const { confirm, dialog } = useConfirm()
 
-  const act = async (action: () => Promise<unknown>, confirmText: string) => {
-    if (!window.confirm(confirmText)) return
+  const act = async (action: () => Promise<unknown>, options: ConfirmOptions) => {
+    if (!(await confirm(options))) return
     setActionError(null)
     try {
       await action()
@@ -89,13 +91,13 @@ export function SurveysPage() {
                   <td className="actions-col">
                     {s.status !== 'Open' && s.groupStatus === 'Active' && s.questionCount > 0 && (
                       <button type="button" className="btn btn-small btn-primary"
-                        onClick={() => act(() => api.post(`/api/manager/surveys/${s.id}/open`), t('surveys.confirmOpen'))}>
+                        onClick={() => act(() => api.post(`/api/manager/surveys/${s.id}/open`), statusConfirm(t, 'open', s.status))}>
                         {s.status === 'Draft' ? t('surveys.open') : t('surveys.reopen')}
                       </button>
                     )}
                     {s.status === 'Open' && (
                       <button type="button" className="btn btn-small"
-                        onClick={() => act(() => api.post(`/api/manager/surveys/${s.id}/close`), t('surveys.confirmClose'))}>
+                        onClick={() => act(() => api.post(`/api/manager/surveys/${s.id}/close`), statusConfirm(t, 'close', s.status))}>
                         {t('surveys.close')}
                       </button>
                     )}
@@ -105,7 +107,12 @@ export function SurveysPage() {
                     {s.status !== 'Draft' && <ExportButton url={`/api/manager/exports/surveys/${s.id}`} />}
                     {s.status === 'Draft' && (
                       <button type="button" className="btn btn-small btn-danger"
-                        onClick={() => act(() => api.del(`/api/manager/surveys/${s.id}`), t('common.confirmDelete'))}>
+                        onClick={() => act(() => api.del(`/api/manager/surveys/${s.id}`), {
+                          title: t('surveys.confirmDeleteTitle'),
+                          message: t('surveys.confirmDelete', { title: s.title }),
+                          confirmLabel: t('common.delete'),
+                          danger: true,
+                        })}>
                         {t('common.delete')}
                       </button>
                     )}
@@ -116,6 +123,7 @@ export function SurveysPage() {
           </table>
         </div>
       )}
+      {dialog}
     </>
   )
 }

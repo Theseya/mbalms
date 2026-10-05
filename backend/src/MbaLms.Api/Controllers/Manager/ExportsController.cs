@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
@@ -15,12 +16,11 @@ public class ExportsController(AppDbContext db, AppTime time) : ManagerControlle
 {
     [HttpGet("students")]
     public async Task<IActionResult> Students([FromQuery] Guid? groupId, [FromQuery] bool includeArchived = false,
+        [FromQuery] [MaxLength(Paging.MaxSearchLength, ErrorMessage = FieldCodes.MaxLength)] string? search = null,
         [FromQuery] string? lang = null, CancellationToken ct = default)
     {
         var t = ExportText.For(lang);
-        var q = Db.Students.AsNoTracking().Include(s => s.Group).AsQueryable();
-        if (groupId is not null) q = q.Where(s => s.GroupId == groupId);
-        else if (!includeArchived) q = q.Where(s => s.Group!.Status == GroupStatus.Active);
+        var q = StudentsController.Filter(Db.Students.AsNoTracking().Include(s => s.Group), groupId, includeArchived, search);
         var rows = await q.OrderBy(s => s.Group!.Name).ThenBy(s => s.LastName).ThenBy(s => s.FirstName).ToListAsync(ct);
 
         return Xlsx("students", t["sheet.students"], [
@@ -113,16 +113,19 @@ public class ExportsController(AppDbContext db, AppTime time) : ManagerControlle
         if (groupId is null && !includeArchived) q = q.Where(l => l.Group!.Status == GroupStatus.Active);
         var rows = await LessonQueries.Load(q, ct);
 
+        // Date and times are real Excel date/time cells in the application time zone, named in the headers.
+        var zone = $" ({time.TimeZoneId})";
         return Xlsx("schedule", t["sheet.schedule"], [
             new ExcelColumn<Lesson>(t["col.date"], l => DateOnly.FromDateTime(time.ToLocal(l.StartsAt))),
-            new(t["col.start"], l => time.ToLocal(l.StartsAt).ToString("HH:mm")),
-            new(t["col.end"], l => time.ToLocal(l.EndsAt).ToString("HH:mm")),
+            new(t["col.start"] + zone, l => TimeOnly.FromDateTime(time.ToLocal(l.StartsAt))),
+            new(t["col.end"] + zone, l => TimeOnly.FromDateTime(time.ToLocal(l.EndsAt))),
             new(t["col.group"], l => l.Group!.Name),
             new(t["col.discipline"], l => l.Discipline!.Name),
             new(t["col.teacher"], l => l.Teacher!.FullName),
             new(t["col.format"], l => l.Format is null ? null : t[$"format.{l.Format}"]),
             new(t["col.location"], l => l.Location),
-            new(t["col.comment"], l => l.Comment)
+            new(t["col.comment"], l => l.Comment),
+            new(t["col.lessonStatus"], l => t[$"lessonStatus.{l.Status}"])
         ], rows);
     }
 
@@ -187,7 +190,9 @@ public sealed class ExportText
         ["col.location"] = "Место / ссылка", ["col.comment"] = "Комментарий", ["col.submittedAt"] = "Отправлено",
         ["groupStatus.Active"] = "Активная", ["groupStatus.Archived"] = "В архиве",
         ["gradeStatus.Draft"] = "Черновик", ["gradeStatus.Published"] = "Опубликована",
-        ["format.Offline"] = "Очно", ["format.Online"] = "Онлайн", ["format.Hybrid"] = "Гибрид"
+        ["format.Offline"] = "Очно", ["format.Online"] = "Онлайн", ["format.Hybrid"] = "Гибрид",
+        ["col.lessonStatus"] = "Статус занятия",
+        ["lessonStatus.Scheduled"] = "Запланировано", ["lessonStatus.Cancelled"] = "Отменено"
     };
 
     private static readonly Dictionary<string, string> En = new()
@@ -205,7 +210,9 @@ public sealed class ExportText
         ["col.location"] = "Location / link", ["col.comment"] = "Comment", ["col.submittedAt"] = "Submitted at",
         ["groupStatus.Active"] = "Active", ["groupStatus.Archived"] = "Archived",
         ["gradeStatus.Draft"] = "Draft", ["gradeStatus.Published"] = "Published",
-        ["format.Offline"] = "In person", ["format.Online"] = "Online", ["format.Hybrid"] = "Hybrid"
+        ["format.Offline"] = "In person", ["format.Online"] = "Online", ["format.Hybrid"] = "Hybrid",
+        ["col.lessonStatus"] = "Lesson status",
+        ["lessonStatus.Scheduled"] = "Scheduled", ["lessonStatus.Cancelled"] = "Cancelled"
     };
 
     private readonly Dictionary<string, string> _texts;

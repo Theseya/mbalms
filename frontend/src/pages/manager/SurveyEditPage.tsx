@@ -5,7 +5,8 @@ import { ApiError, api } from '../../api/client'
 import type { Discipline, Group, QuestionType, SurveyDetail, SurveyType, Teacher } from '../../api/types'
 import { Badge, ErrorBanner, Field, Loading, PageHeader, Select } from '../../components/ui'
 import { formatLocalDateTime, getAppTimeZone, toInputDateTime } from '../../lib/format'
-import { surveyStatusTone as statusTone } from '../../lib/labels'
+import { statusConfirm, surveyStatusTone as statusTone } from '../../lib/labels'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
@@ -19,6 +20,8 @@ interface QuestionForm {
   isRequired: boolean
   scaleMin: string
   scaleMax: string
+  scaleMinLabel: string
+  scaleMaxLabel: string
   options: string[]
 }
 
@@ -38,7 +41,10 @@ let keySeq = 0
 const newKey = () => `q${++keySeq}`
 
 function newQuestion(type: QuestionType = 'Scale'): QuestionForm {
-  return { key: newKey(), text: '', type, isRequired: true, scaleMin: '1', scaleMax: '5', options: ['', ''] }
+  return {
+    key: newKey(), text: '', type, isRequired: true, scaleMin: '1', scaleMax: '5', scaleMinLabel: '', scaleMaxLabel: '',
+    options: ['', ''],
+  }
 }
 
 function fromDetail(s: SurveyDetail): SurveyForm {
@@ -58,6 +64,8 @@ function fromDetail(s: SurveyDetail): SurveyForm {
       isRequired: q.isRequired,
       scaleMin: q.scaleMin?.toString() ?? '1',
       scaleMax: q.scaleMax?.toString() ?? '5',
+      scaleMinLabel: q.scaleMinLabel ?? '',
+      scaleMaxLabel: q.scaleMaxLabel ?? '',
       options: q.options.length ? q.options.map((o) => o.text) : ['', ''],
     })),
   }
@@ -81,6 +89,7 @@ export function SurveyEditPage() {
   const [error, setError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
 
   useEffect(() => {
     if (survey.data) setForm(fromDetail(survey.data))
@@ -101,13 +110,14 @@ export function SurveyEditPage() {
     setForm({ ...f, questions: qs })
   }
 
+  const teaching = f.type === 'TeachingEvaluation'
   const body = () => ({
     type: f.type,
     title: f.title.trim(),
     description: f.description.trim() || null,
     groupId: f.groupId || null,
-    teacherId: f.teacherId || null,
-    disciplineId: f.disciplineId || null,
+    teacherId: teaching ? f.teacherId || null : null,
+    disciplineId: teaching ? f.disciplineId || null : null,
     opensAt: f.opensAt || null,
     closesAt: f.closesAt || null,
     questions: f.questions.map((q) => ({
@@ -116,6 +126,8 @@ export function SurveyEditPage() {
       isRequired: q.isRequired,
       scaleMin: q.type === 'Scale' ? Number(q.scaleMin) : null,
       scaleMax: q.type === 'Scale' ? Number(q.scaleMax) : null,
+      scaleMinLabel: q.type === 'Scale' ? q.scaleMinLabel.trim() || null : null,
+      scaleMaxLabel: q.type === 'Scale' ? q.scaleMaxLabel.trim() || null : null,
       options: q.type === 'SingleChoice' ? q.options.map((o) => o.trim()).filter(Boolean) : null,
     })),
   })
@@ -138,7 +150,7 @@ export function SurveyEditPage() {
   }
 
   const changeStatus = async (action: 'open' | 'close') => {
-    if (!window.confirm(t(action === 'open' ? 'surveys.confirmOpen' : 'surveys.confirmClose'))) return
+    if (!(await confirm(statusConfirm(t, action, survey.data?.status)))) return
     setError(null)
     try {
       await api.post(`/api/manager/surveys/${id}/${action}`)
@@ -207,15 +219,20 @@ export function SurveyEditPage() {
             {(fid, d) => <textarea id={fid} rows={3} aria-describedby={d} value={f.description}
               onChange={(e) => setForm({ ...f, description: e.target.value })} />}
           </Field>
+          {teaching && <small className="hint block">{t('surveys.teachingOnlyNote')}</small>}
           <div className="grid-2">
-            <Field label={t('surveys.teacherOptional')} error={fieldError('teacherId')}>
-              {(fid) => <Select id={fid} value={f.teacherId} onChange={(v) => setForm({ ...f, teacherId: v })}
-                items={teachers.data} label={(x) => x.fullName} />}
-            </Field>
-            <Field label={t('common.discipline')} error={fieldError('disciplineId')}>
-              {(fid) => <Select id={fid} value={f.disciplineId} onChange={(v) => setForm({ ...f, disciplineId: v })}
-                items={disciplines.data} label={(x) => x.name} />}
-            </Field>
+            {teaching && (
+              <>
+                <Field label={t('surveys.teacher')} required error={fieldError('teacherId')}>
+                  {(fid, d) => <Select id={fid} describedBy={d} value={f.teacherId} onChange={(v) => setForm({ ...f, teacherId: v })}
+                    items={teachers.data} label={(x) => x.fullName} placeholder={t('common.selectPlaceholder')} required />}
+                </Field>
+                <Field label={t('common.discipline')} required error={fieldError('disciplineId')}>
+                  {(fid, d) => <Select id={fid} describedBy={d} value={f.disciplineId} onChange={(v) => setForm({ ...f, disciplineId: v })}
+                    items={disciplines.data} label={(x) => x.name} placeholder={t('common.selectPlaceholder')} required />}
+                </Field>
+              </>
+            )}
             <Field label={t('surveys.opensAt')} error={fieldError('opensAt')}>
               {(fid, d) => <input id={fid} type="datetime-local" aria-describedby={d} value={f.opensAt}
                 onChange={(e) => setForm({ ...f, opensAt: e.target.value })} />}
@@ -274,6 +291,14 @@ export function SurveyEditPage() {
                     {(fid, d) => <input id={fid} type="number" step={1} aria-describedby={d} value={q.scaleMax}
                       onChange={(e) => setQ(i, { scaleMax: e.target.value })} />}
                   </Field>
+                  <Field label={t('surveys.scaleMinLabel')} error={qError(i, 'scaleMinLabel')}>
+                    {(fid, d) => <input id={fid} maxLength={100} aria-describedby={d} value={q.scaleMinLabel}
+                      placeholder={t('surveys.scaleLabelPlaceholder')} onChange={(e) => setQ(i, { scaleMinLabel: e.target.value })} />}
+                  </Field>
+                  <Field label={t('surveys.scaleMaxLabel')} error={qError(i, 'scaleMaxLabel')}>
+                    {(fid, d) => <input id={fid} maxLength={100} aria-describedby={d} value={q.scaleMaxLabel}
+                      onChange={(e) => setQ(i, { scaleMaxLabel: e.target.value })} />}
+                  </Field>
                 </div>
               )}
               {q.type === 'SingleChoice' && (
@@ -309,6 +334,7 @@ export function SurveyEditPage() {
           </div>
         )}
       </form>
+      {dialog}
     </>
   )
 }

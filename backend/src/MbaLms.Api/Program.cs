@@ -104,15 +104,13 @@ builder.Services
     .AddControllers(o =>
     {
         o.Filters.Add<ValidateAntiforgeryFilter>();
-        // Validation error keys use JSON (camelCase) names.
-        o.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
     })
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .ConfigureApiBehaviorOptions(o =>
     {
         o.InvalidModelStateResponseFactory = ctx =>
         {
-            var pd = new ValidationProblemDetails(ctx.ModelState)
+            var pd = new ValidationProblemDetails(ValidationErrors.FromModelState(ctx.ModelState))
             {
                 Status = StatusCodes.Status400BadRequest,
                 Title = ErrorCodes.ValidationFailed

@@ -11,6 +11,8 @@ export default defineConfig({
     proxy: {
       '/api': { target: apiTarget, changeOrigin: false },
     },
+    // Tests compare localization keys with the API error codes and enums; the dev server stays restricted.
+    fs: process.env.VITEST ? { allow: ['.', '../backend/src/MbaLms.Api'] } : undefined,
   },
   test: {
     environment: 'jsdom',

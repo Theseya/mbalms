@@ -31,4 +31,17 @@ public abstract class ManagerControllerBase(AppDbContext db) : ControllerBase
     }
 
     protected static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>Wraps a term for ILIKE so that user input cannot inject wildcards.</summary>
+    internal static string ContainsPattern(string term) =>
+        "%" + term.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_") + "%";
+}
+
+public record PagedResult<T>(List<T> Items, int Total, int Page, int PageSize);
+
+public static class Paging
+{
+    public const int DefaultPageSize = 25;
+    public const int MaxPageSize = 200;
+    public const int MaxSearchLength = 100;
 }

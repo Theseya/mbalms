@@ -6,6 +6,7 @@ import { Layout } from './components/Layout'
 import { Loading } from './components/ui'
 import { AccountPage } from './pages/AccountPage'
 import { LoginPage } from './pages/LoginPage'
+import { GradebookPage } from './pages/manager/GradebookPage'
 import { GradesPage } from './pages/manager/GradesPage'
 import { GroupsPage } from './pages/manager/GroupsPage'
 import { DisciplinesPage, PeriodsPage, TeachersPage } from './pages/manager/ReferencePage'
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/manager/periods" element={<RequireRole role="Manager"><PeriodsPage /></RequireRole>} />
         <Route path="/manager/schedule" element={<RequireRole role="Manager"><SchedulePage /></RequireRole>} />
         <Route path="/manager/grades" element={<RequireRole role="Manager"><GradesPage /></RequireRole>} />
+        <Route path="/manager/gradebook" element={<RequireRole role="Manager"><GradebookPage /></RequireRole>} />
         <Route path="/manager/surveys" element={<RequireRole role="Manager"><SurveysPage /></RequireRole>} />
         <Route path="/manager/surveys/new" element={<RequireRole role="Manager"><SurveyEditPage /></RequireRole>} />
         <Route path="/manager/surveys/:id" element={<RequireRole role="Manager"><SurveyEditPage /></RequireRole>} />

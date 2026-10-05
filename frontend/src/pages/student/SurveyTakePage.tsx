@@ -104,6 +104,12 @@ export function SurveyTakePage() {
                         </label>
                       ))}
                     </div>
+                    {(q.scaleMinLabel || q.scaleMaxLabel) && (
+                      <div className="scale-labels">
+                        <span>{q.scaleMinLabel && `${q.scaleMin} — ${q.scaleMinLabel}`}</span>
+                        <span>{q.scaleMaxLabel && `${q.scaleMax} — ${q.scaleMaxLabel}`}</span>
+                      </div>
+                    )}
                     <small className="hint block">{t('studentSurveys.scaleHint', { min: q.scaleMin, max: q.scaleMax })}</small>
                   </>
                 )}

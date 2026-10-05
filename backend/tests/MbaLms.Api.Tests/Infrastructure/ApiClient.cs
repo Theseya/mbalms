@@ -63,6 +63,13 @@ public sealed class ApiClient(HttpClient http)
     }
 }
 
+/// <summary>Field errors of a response; a missing field fails with the whole response body for diagnosis.</summary>
+public sealed class FieldErrors(Dictionary<string, string> errors, string body)
+{
+    public string this[string field] =>
+        errors.TryGetValue(field, out var code) ? code : throw new Xunit.Sdk.XunitException($"No error for '{field}' in {body}");
+}
+
 public static class HttpResponseExtensions
 {
     public static async Task EnsureStatusAsync(this HttpResponseMessage res, HttpStatusCode expected)
@@ -72,6 +79,15 @@ public static class HttpResponseExtensions
             var body = await res.Content.ReadAsStringAsync();
             Assert.Fail($"Expected {(int)expected} but got {(int)res.StatusCode}: {body}");
         }
+    }
+
+    /// <summary>Field name → first error code from a validation problem response.</summary>
+    public static async Task<FieldErrors> FieldErrorsAsync(this HttpResponseMessage res)
+    {
+        var body = await res.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(body);
+        if (!json.TryGetProperty("errors", out var errors)) Assert.Fail($"No field errors in {(int)res.StatusCode}: {body}");
+        return new FieldErrors(errors.EnumerateObject().ToDictionary(p => p.Name, p => p.Value[0].GetString()!), body);
     }
 
     public static async Task<string?> ErrorCodeAsync(this HttpResponseMessage res)

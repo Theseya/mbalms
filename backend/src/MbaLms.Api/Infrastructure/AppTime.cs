@@ -32,7 +32,9 @@ public class AppTime
     /// <summary>Interprets a wall-clock value in the application time zone and returns the UTC instant.</summary>
     public DateTimeOffset ToUtc(DateTime local, string field)
     {
-        var unspecified = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+        // A value with "Z" or an offset would be silently shifted by the zone difference, so it is rejected.
+        if (local.Kind != DateTimeKind.Unspecified) throw AppException.Validation(field, FieldCodes.Invalid);
+        var unspecified = local;
         if (Zone.IsInvalidTime(unspecified))
             throw AppException.Validation(field, FieldCodes.Invalid);
         var utc = TimeZoneInfo.ConvertTimeToUtc(unspecified, Zone);

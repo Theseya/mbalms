@@ -86,6 +86,61 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   )
 }
 
+export interface ConfirmOptions {
+  title: string
+  message: string
+  confirmLabel: string
+  danger?: boolean
+  details?: string[]
+}
+
+export function ConfirmDialog({ title, message, confirmLabel, danger, details, onConfirm, onCancel }:
+  ConfirmOptions & { onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <p>{message}</p>
+      {details && details.length > 0 && <ul className="confirm-details">{details.map((d) => <li key={d}>{d}</li>)}</ul>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onCancel}>{t('common.cancel')}</button>
+        <button type="button" className={danger ? 'btn btn-danger-solid' : 'btn btn-primary'} onClick={onConfirm}>
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+export function SearchField({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
+  const { t } = useTranslation()
+  return (
+    <Field label={t('common.search')}>
+      {(id) => <input id={id} type="search" value={value} placeholder={placeholder} maxLength={100}
+        onChange={(e) => onChange(e.target.value)} />}
+    </Field>
+  )
+}
+
+export function Pagination({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (page: number) => void }) {
+  const { t } = useTranslation()
+  if (total <= pageSize) return null
+  const pages = Math.ceil(total / pageSize)
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(total, page * pageSize)
+  return (
+    <nav className="pagination" aria-label={t('paging.label')}>
+      <span className="muted">{t('paging.range', { from, to, total })}</span>
+      <button type="button" className="btn btn-small" disabled={page <= 1} onClick={() => onChange(page - 1)}>
+        {t('paging.prev')}
+      </button>
+      <span>{t('paging.page', { page, pages })}</span>
+      <button type="button" className="btn btn-small" disabled={page >= pages} onClick={() => onChange(page + 1)}>
+        {t('paging.next')}
+      </button>
+    </nav>
+  )
+}
+
 export function FormActions({ saving, onCancel, submitLabel }: { saving: boolean; onCancel: () => void; submitLabel?: string }) {
   const { t } = useTranslation()
   return (

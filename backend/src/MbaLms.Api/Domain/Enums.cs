@@ -19,6 +19,13 @@ public enum LessonFormat
     Hybrid = 2
 }
 
+/// <summary>A cancelled lesson is kept and shown to students as cancelled; it is not deleted.</summary>
+public enum LessonStatus
+{
+    Scheduled = 0,
+    Cancelled = 1
+}
+
 public enum GradeStatus
 {
     Draft = 0,

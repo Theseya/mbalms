@@ -171,6 +171,7 @@ public class SurveyTests(ApiFactory factory) : TestBase(factory)
     private static async Task<SurveyDetailDto> CreateSurveyAsync(ApiClient manager, Guid groupId, SurveyType type)
     {
         var teacher = type == SurveyType.TeachingEvaluation ? await CreateTeacherAsync(manager) : null;
+        var discipline = type == SurveyType.TeachingEvaluation ? await CreateDisciplineAsync(manager) : null;
         return await manager.PostJsonAsync<SurveyDetailDto>("/api/manager/surveys", new
         {
             type = type.ToString(),
@@ -178,6 +179,7 @@ public class SurveyTests(ApiFactory factory) : TestBase(factory)
             description = "Описание",
             groupId,
             teacherId = teacher?.Id,
+            disciplineId = discipline?.Id,
             questions = new object[]
             {
                 new { text = "Оцените по шкале", type = "Scale", isRequired = true, scaleMin = 1, scaleMax = 5 },

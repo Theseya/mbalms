@@ -17,12 +17,32 @@ public record GradeCreateRequest(
     [Required(ErrorMessage = FieldCodes.Required)] Guid? PeriodId,
     [Required(ErrorMessage = FieldCodes.Required)] [Range(0, 100, ErrorMessage = FieldCodes.Range)] int? Value);
 
+/// <param name="ConfirmPublishedChange">Must be true to change the value of a published grade.</param>
 public record GradeUpdateRequest(
-    [Required(ErrorMessage = FieldCodes.Required)] [Range(0, 100, ErrorMessage = FieldCodes.Range)] int? Value);
+    [Required(ErrorMessage = FieldCodes.Required)] [Range(0, 100, ErrorMessage = FieldCodes.Range)] int? Value,
+    bool ConfirmPublishedChange = false);
+
+public record GradeSheetRowDto(Guid StudentId, string StudentName, Guid? GradeId, int? Value, GradeStatus? Status,
+    DateTimeOffset? PublishedAt);
+
+/// <summary>All current students of a group with their grade (if any) for one discipline and period.</summary>
+public record GradeSheetDto(Guid GroupId, string GroupName, GroupStatus GroupStatus, Guid DisciplineId, string DisciplineName,
+    Guid PeriodId, string PeriodName, List<GradeSheetRowDto> Rows);
+
+/// <param name="Value">Null leaves the student's grade as it is.</param>
+public record GradeSheetEntry(
+    [Required(ErrorMessage = FieldCodes.Required)] Guid? StudentId,
+    [Range(0, 100, ErrorMessage = FieldCodes.Range)] int? Value);
+
+/// <param name="ConfirmPublishedChanges">Must be true if any entry changes a published grade.</param>
+public record GradeSheetSaveRequest(
+    [Required(ErrorMessage = FieldCodes.Required)] List<GradeSheetEntry> Entries,
+    bool ConfirmPublishedChanges = false);
 
 public record BulkPublishRequest([Required(ErrorMessage = FieldCodes.Required)] List<Guid> Ids);
 
-public record GradePublishedPayload(Guid GradeId, string DisciplineName, string PeriodName);
+/// <param name="Change">"published" for a (re)publication, "updated" when a published value changes.</param>
+public record GradePublishedPayload(Guid GradeId, string DisciplineName, string PeriodName, string Change);
 
 public record GradeHistoryDto(Guid Id, Guid GradeId, GradeChangeAction Action, int? OldValue, int? NewValue,
     GradeStatus? OldStatus, GradeStatus? NewStatus, string? ChangedBy, DateTimeOffset ChangedAt);
@@ -94,26 +114,110 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     }
 
     /// <summary>
-    /// Changing a published grade keeps it published and notifies the student again;
+    /// Changing a published grade requires explicit confirmation, keeps it published and notifies the student again;
     /// changing a draft does not notify.
     /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<GradeDto> Update(Guid id, GradeUpdateRequest r, CancellationToken ct)
     {
         var grade = await LoadForChange(id, ct);
-        if (grade.Value != r.Value)
-        {
-            Record(grade, GradeChangeAction.Updated, grade.Value, grade.Status, newValue: r.Value);
-            grade.Value = r.Value!.Value;
-            grade.UpdatedAt = time.UtcNow;
-            if (grade.Status == GradeStatus.Published)
-            {
-                grade.PublishedAt = time.UtcNow;
-                Notify(grade);
-            }
-            await Db.SaveChangesAsync(ct);
-        }
+        if (grade.Value != r.Value && grade.Status == GradeStatus.Published && !r.ConfirmPublishedChange)
+            throw AppException.Conflict(ErrorCodes.PublishedChangeNotConfirmed);
+        if (ChangeValue(grade, r.Value!.Value)) await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
+    }
+
+    [HttpGet("sheet/{groupId:guid}/{disciplineId:guid}/{periodId:guid}")]
+    public async Task<GradeSheetDto> Sheet(Guid groupId, Guid disciplineId, Guid periodId, CancellationToken ct)
+    {
+        var group = await Db.Groups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == groupId, ct) ?? throw AppException.NotFound();
+        var discipline = await Db.Disciplines.AsNoTracking().FirstOrDefaultAsync(d => d.Id == disciplineId, ct) ?? throw AppException.NotFound();
+        var period = await Db.Periods.AsNoTracking().FirstOrDefaultAsync(p => p.Id == periodId, ct) ?? throw AppException.NotFound();
+
+        var students = await Db.Students.AsNoTracking().Where(s => s.GroupId == groupId)
+            .OrderBy(s => s.LastName).ThenBy(s => s.FirstName).ThenBy(s => s.Id).ToListAsync(ct);
+        var grades = await Db.Grades.AsNoTracking()
+            .Where(g => g.Student!.GroupId == groupId && g.DisciplineId == disciplineId && g.PeriodId == periodId)
+            .ToDictionaryAsync(g => g.StudentId, ct);
+
+        var rows = students.Select(s => grades.TryGetValue(s.Id, out var g)
+            ? new GradeSheetRowDto(s.Id, s.FullName, g.Id, g.Value, g.Status, g.PublishedAt)
+            : new GradeSheetRowDto(s.Id, s.FullName, null, null, null, null)).ToList();
+        return new GradeSheetDto(group.Id, group.Name, group.Status, discipline.Id, discipline.Name, period.Id, period.Name, rows);
+    }
+
+    /// <summary>
+    /// Saves the grade sheet in one transaction: new values become drafts, changed values update existing grades.
+    /// Students must belong to the group; publishing is a separate step.
+    /// </summary>
+    [HttpPut("sheet/{groupId:guid}/{disciplineId:guid}/{periodId:guid}")]
+    public async Task<GradeSheetDto> SaveSheet(Guid groupId, Guid disciplineId, Guid periodId, GradeSheetSaveRequest r,
+        CancellationToken ct)
+    {
+        var group = await Db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, ct) ?? throw AppException.NotFound();
+        if (group.Status == GroupStatus.Archived) throw AppException.Conflict(ErrorCodes.GroupArchived);
+        var discipline = await Db.Disciplines.FirstOrDefaultAsync(d => d.Id == disciplineId, ct) ?? throw AppException.NotFound();
+        var period = await Db.Periods.FirstOrDefaultAsync(p => p.Id == periodId, ct) ?? throw AppException.NotFound();
+
+        var students = await Db.Students.Where(s => s.GroupId == groupId).ToDictionaryAsync(s => s.Id, ct);
+        var errors = new Dictionary<string, string[]>();
+        var seen = new HashSet<Guid>();
+        for (var i = 0; i < r.Entries.Count; i++)
+        {
+            var studentId = r.Entries[i].StudentId!.Value;
+            if (!students.ContainsKey(studentId)) errors[$"entries[{i}].studentId"] = [FieldCodes.NotFound];
+            else if (!seen.Add(studentId)) errors[$"entries[{i}].studentId"] = [ErrorCodes.Duplicate];
+        }
+        if (errors.Count > 0) throw AppException.Validation(errors);
+
+        var existing = await Db.Grades.Where(g => g.Student!.GroupId == groupId && g.DisciplineId == disciplineId && g.PeriodId == periodId)
+            .ToDictionaryAsync(g => g.StudentId, ct);
+        var entries = r.Entries.Where(e => e.Value is not null).ToList();
+        if (!r.ConfirmPublishedChanges && entries.Any(e => existing.TryGetValue(e.StudentId!.Value, out var g)
+                                                           && g.Status == GradeStatus.Published && g.Value != e.Value))
+            throw AppException.Conflict(ErrorCodes.PublishedChangeNotConfirmed);
+
+        foreach (var entry in entries)
+        {
+            var student = students[entry.StudentId!.Value];
+            if (existing.TryGetValue(student.Id, out var grade))
+            {
+                grade.Student = student;
+                grade.Discipline = discipline;
+                grade.Period = period;
+                ChangeValue(grade, entry.Value!.Value);
+                continue;
+            }
+            grade = new Grade
+            {
+                Id = Guid.CreateVersion7(),
+                StudentId = student.Id,
+                DisciplineId = discipline.Id,
+                PeriodId = period.Id,
+                Value = entry.Value!.Value,
+                Status = GradeStatus.Draft,
+                UpdatedAt = time.UtcNow
+            };
+            Db.Grades.Add(grade);
+            Record(grade, GradeChangeAction.Created, null, null);
+        }
+        await Db.SaveChangesAsync(ct);
+        return await Sheet(groupId, disciplineId, periodId, ct);
+    }
+
+    /// <summary>Returns false if the value is unchanged. The grade must have Student, Discipline and Period loaded.</summary>
+    private bool ChangeValue(Grade grade, int value)
+    {
+        if (grade.Value == value) return false;
+        Record(grade, GradeChangeAction.Updated, grade.Value, grade.Status, newValue: value);
+        grade.Value = value;
+        grade.UpdatedAt = time.UtcNow;
+        if (grade.Status == GradeStatus.Published)
+        {
+            grade.PublishedAt = time.UtcNow;
+            Notify(grade, "updated");
+        }
+        return true;
     }
 
     [HttpPost("{id:guid}/publish")]
@@ -171,7 +275,7 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
         grade.Status = GradeStatus.Published;
         grade.PublishedAt = time.UtcNow;
         grade.UpdatedAt = time.UtcNow;
-        Notify(grade);
+        Notify(grade, "published");
     }
 
     /// <summary>
@@ -196,9 +300,9 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
             ChangedAt = time.UtcNow
         });
 
-    private void Notify(Grade grade) =>
+    private void Notify(Grade grade, string change) =>
         notifications.Add(grade.Student!.UserId, NotificationType.GradePublished,
-            new GradePublishedPayload(grade.Id, grade.Discipline!.Name, grade.Period!.Name));
+            new GradePublishedPayload(grade.Id, grade.Discipline!.Name, grade.Period!.Name, change));
 
     private async Task<Grade> LoadForChange(Guid id, CancellationToken ct)
     {

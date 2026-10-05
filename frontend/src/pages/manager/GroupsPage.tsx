@@ -2,9 +2,13 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
-import type { Group } from '../../api/types'
-import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader } from '../../components/ui'
+import type { Group, Program } from '../../api/types'
+import {
+  Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField,
+} from '../../components/ui'
 import { formatInstant, formatLocalDate } from '../../lib/format'
+import { PAGE_SIZE, matchesSearch, pageOf } from '../../lib/paging'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
@@ -14,12 +18,18 @@ interface Form { id: string | null; name: string; startDate: string; endDate: st
 export function GroupsPage() {
   const { t } = useTranslation()
   const [filter, setFilter] = useState<Filter>('Active')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const list = useLoad(() => api.get<Group[]>(`/api/manager/groups${query({ status: filter })}`), filter)
   const [form, setForm] = useState<Form | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
+
+  const filtered = list.data?.filter((g) => matchesSearch(search, g.name)) ?? []
+  const shown = pageOf(filtered, page)
 
   const open = (g?: Group) => {
     setError(null)
@@ -44,8 +54,7 @@ export function GroupsPage() {
     }
   }
 
-  const act = async (action: () => Promise<unknown>, confirmText?: string) => {
-    if (confirmText && !window.confirm(confirmText)) return
+  const act = async (action: () => Promise<unknown>) => {
     setActionError(null)
     try {
       await action()
@@ -53,6 +62,25 @@ export function GroupsPage() {
     } catch (err) {
       setActionError(toApiError(err))
     }
+  }
+
+  const onArchive = async (g: Group) => {
+    const ok = await confirm({
+      title: t('groups.confirmArchiveTitle'),
+      message: t('groups.confirmArchive', { name: g.name, count: g.studentCount }),
+      confirmLabel: t('groups.archive'),
+    })
+    if (ok) await act(() => api.post(`/api/manager/groups/${g.id}/archive`))
+  }
+
+  const onDelete = async (g: Group) => {
+    const ok = await confirm({
+      title: t('groups.confirmDeleteTitle'),
+      message: t('groups.confirmDelete', { name: g.name }),
+      confirmLabel: t('common.delete'),
+      danger: true,
+    })
+    if (ok) await act(() => api.del(`/api/manager/groups/${g.id}`))
   }
 
   return (
@@ -66,16 +94,21 @@ export function GroupsPage() {
           </>
         }
       />
+      <ProgramCard />
       <div className="tabs" role="tablist">
         {(['Active', 'Archived', 'All'] as const).map((f) => (
           <button key={f} type="button" role="tab" aria-selected={filter === f}
-            className={filter === f ? 'tab active' : 'tab'} onClick={() => setFilter(f)}>
+            className={filter === f ? 'tab active' : 'tab'} onClick={() => { setFilter(f); setPage(1) }}>
             {t(`groupFilter.${f}`)}
           </button>
         ))}
       </div>
+      <div className="filters">
+        <SearchField value={search} placeholder={t('groups.searchPlaceholder')}
+          onChange={(v) => { setSearch(v); setPage(1) }} />
+      </div>
       <ErrorBanner error={list.error ?? actionError} />
-      {list.loading && !list.data ? <Loading /> : !list.data?.length ? <Empty /> : (
+      {list.loading && !list.data ? <Loading /> : !shown.items.length ? <Empty /> : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -89,7 +122,7 @@ export function GroupsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.data.map((g) => (
+              {shown.items.map((g) => (
                 <tr key={g.id}>
                   <td data-label={t('common.name')}>
                     <Link to={`/manager/students?groupId=${g.id}`}>{g.name}</Link>
@@ -104,10 +137,7 @@ export function GroupsPage() {
                   <td className="actions-col">
                     <button type="button" className="btn btn-small" onClick={() => open(g)}>{t('common.edit')}</button>
                     {g.status === 'Active' ? (
-                      <button type="button" className="btn btn-small"
-                        onClick={() => act(() => api.post(`/api/manager/groups/${g.id}/archive`), t('groups.confirmArchive'))}>
-                        {t('groups.archive')}
-                      </button>
+                      <button type="button" className="btn btn-small" onClick={() => onArchive(g)}>{t('groups.archive')}</button>
                     ) : (
                       <button type="button" className="btn btn-small"
                         onClick={() => act(() => api.post(`/api/manager/groups/${g.id}/restore`))}>
@@ -115,10 +145,7 @@ export function GroupsPage() {
                       </button>
                     )}
                     {g.studentCount === 0 && (
-                      <button type="button" className="btn btn-small btn-danger"
-                        onClick={() => act(() => api.del(`/api/manager/groups/${g.id}`), t('common.confirmDelete'))}>
-                        {t('common.delete')}
-                      </button>
+                      <button type="button" className="btn btn-small btn-danger" onClick={() => onDelete(g)}>{t('common.delete')}</button>
                     )}
                   </td>
                 </tr>
@@ -127,13 +154,14 @@ export function GroupsPage() {
           </table>
         </div>
       )}
+      <Pagination page={shown.page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} />
 
       {form && (
         <Modal title={form.id ? t('groups.editTitle') : t('groups.new')} onClose={() => setForm(null)}>
           <form onSubmit={onSubmit} noValidate>
             <ErrorBanner error={error} />
             <Field label={t('common.name')} required error={fieldError('name')}>
-              {(id, d) => <input id={id} aria-describedby={d} value={form.name} required
+              {(id, d) => <input id={id} aria-describedby={d} value={form.name} required maxLength={100}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />}
             </Field>
             <div className="grid-2">
@@ -150,6 +178,58 @@ export function GroupsPage() {
           </form>
         </Modal>
       )}
+      {dialog}
     </>
+  )
+}
+
+function ProgramCard() {
+  const { t } = useTranslation()
+  const program = useLoad(() => api.get<Program>('/api/manager/program'), 'program')
+  const [name, setName] = useState<string | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [saving, setSaving] = useState(false)
+  const fieldError = useFieldError(error)
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (name === null) return
+    setSaving(true)
+    setError(null)
+    try {
+      await api.put('/api/manager/program', { name: name.trim() })
+      setName(null)
+      program.reload()
+    } catch (err) {
+      setError(toApiError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (program.error) return <ErrorBanner error={program.error} />
+  if (!program.data) return null
+  return (
+    <section className="card program-card" aria-label={t('program.title')}>
+      <div>
+        <small className="muted">{t('program.title')}</small>
+        <strong>{program.data.name}</strong>
+      </div>
+      <button type="button" className="btn btn-small" onClick={() => { setError(null); setName(program.data!.name) }}>
+        {t('program.rename')}
+      </button>
+      {name !== null && (
+        <Modal title={t('program.editTitle')} onClose={() => setName(null)}>
+          <form onSubmit={onSubmit} noValidate>
+            <ErrorBanner error={error} />
+            <Field label={t('common.name')} required error={fieldError('name')}>
+              {(id, d) => <input id={id} aria-describedby={d} value={name} required maxLength={200}
+                onChange={(e) => setName(e.target.value)} />}
+            </Field>
+            <FormActions saving={saving} onCancel={() => setName(null)} />
+          </form>
+        </Modal>
+      )}
+    </section>
   )
 }

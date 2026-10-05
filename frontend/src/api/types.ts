@@ -1,6 +1,7 @@
 export type Role = 'Manager' | 'Student'
 export type GroupStatus = 'Active' | 'Archived'
 export type LessonFormat = 'Offline' | 'Online' | 'Hybrid'
+export type LessonStatus = 'Scheduled' | 'Cancelled'
 export type GradeStatus = 'Draft' | 'Published'
 export type GradeChangeAction = 'Created' | 'Updated' | 'Published' | 'Unpublished' | 'Deleted'
 export type SurveyType = 'TeachingEvaluation' | 'ServiceSurvey'
@@ -22,6 +23,18 @@ export interface Me {
   displayName: string
   groupName: string | null
   timeZone: string
+}
+
+export interface PagedResult<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface Program {
+  id: string
+  name: string
 }
 
 export interface Group {
@@ -84,6 +97,18 @@ export interface Lesson {
   format: LessonFormat | null
   location: string | null
   comment: string | null
+  status: LessonStatus
+}
+
+export interface LessonOverlap {
+  id: string
+  groupName: string
+  disciplineName: string
+  teacherName: string
+  startsAtLocal: LocalDateTime
+  endsAtLocal: LocalDateTime
+  sameGroup: boolean
+  sameTeacher: boolean
 }
 
 export interface Grade {
@@ -100,6 +125,26 @@ export interface Grade {
   status: GradeStatus
   updatedAt: Instant
   publishedAt: Instant | null
+}
+
+export interface GradeSheetRow {
+  studentId: string
+  studentName: string
+  gradeId: string | null
+  value: number | null
+  status: GradeStatus | null
+  publishedAt: Instant | null
+}
+
+export interface GradeSheet {
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+  disciplineId: string
+  disciplineName: string
+  periodId: string
+  periodName: string
+  rows: GradeSheetRow[]
 }
 
 export interface GradeHistoryEntry {
@@ -128,6 +173,8 @@ export interface SurveyQuestion {
   isRequired: boolean
   scaleMin: number | null
   scaleMax: number | null
+  scaleMinLabel: string | null
+  scaleMaxLabel: string | null
   options: SurveyOption[]
 }
 
@@ -166,6 +213,7 @@ export interface SurveyDetail {
   closesAtLocal: LocalDateTime | null
   publishedAt: Instant | null
   responseCount: number
+  studentCount: number
   questions: SurveyQuestion[]
 }
 
@@ -197,6 +245,7 @@ export interface StudentLesson {
   format: LessonFormat | null
   location: string | null
   comment: string | null
+  status: LessonStatus
 }
 
 export interface StudentGrade {

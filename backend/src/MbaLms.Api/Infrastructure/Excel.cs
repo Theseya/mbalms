@@ -29,7 +29,7 @@ public static class ExcelExporter
         for (var c = 0; c < columns.Count; c++)
         {
             var cell = ws.Cell(1, c + 1);
-            cell.Value = columns[c].Header;
+            WriteText(cell, columns[c].Header);
             cell.Style.Font.Bold = true;
             cell.Style.Fill.BackgroundColor = XLColor.LightGray;
         }
@@ -56,14 +56,12 @@ public static class ExcelExporter
                         cell.Value = d.ToDateTime(TimeOnly.MinValue);
                         cell.Style.DateFormat.Format = columns[c].Format ?? "dd.MM.yyyy";
                         break;
+                    case TimeOnly time:
+                        cell.Value = time.ToTimeSpan();
+                        cell.Style.NumberFormat.Format = columns[c].Format ?? "HH:mm";
+                        break;
                     default:
-                        // Strings are always written as text cells, never as formulas. Formula-like
-                        // text additionally gets Excel's quote prefix, so it stays literal even
-                        // after the user edits the cell.
-                        var text = value.ToString() ?? string.Empty;
-                        cell.Value = text;
-                        cell.Style.NumberFormat.Format = "@";
-                        if (SpreadsheetSanitizer.IsFormulaLike(text)) cell.Style.IncludeQuotePrefix = true;
+                        WriteText(cell, value.ToString() ?? string.Empty);
                         break;
                 }
             }
@@ -75,5 +73,16 @@ public static class ExcelExporter
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Strings are always written as text cells, never as formulas. Formula-like text additionally gets
+    /// Excel's quote prefix, so it stays literal even after the user edits the cell.
+    /// </summary>
+    private static void WriteText(IXLCell cell, string text)
+    {
+        cell.Value = text;
+        cell.Style.NumberFormat.Format = "@";
+        if (SpreadsheetSanitizer.IsFormulaLike(text)) cell.Style.IncludeQuotePrefix = true;
     }
 }

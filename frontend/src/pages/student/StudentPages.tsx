@@ -4,18 +4,22 @@ import { Link } from 'react-router-dom'
 import { ApiError, api } from '../../api/client'
 import type { AppNotification, Dashboard, StudentGrade, StudentLesson, StudentSurveyListItem } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import { SurveyMascot } from '../../components/SurveyMascot'
 import { Badge, Empty, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatInstant, formatLocalDate, formatLocalDateTime, formatLocalTime, getAppTimeZone } from '../../lib/format'
 import { notificationText } from '../../lib/labels'
+import { notifyUnreadChanged } from '../../lib/unread'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
 function LessonCard({ lesson, highlight }: { lesson: StudentLesson; highlight?: boolean }) {
   const { t } = useTranslation()
   const isLink = lesson.location?.startsWith('http://') || lesson.location?.startsWith('https://')
+  const cancelled = lesson.status === 'Cancelled'
   return (
-    <article className={`card lesson${highlight ? ' lesson-next' : ''}`}>
+    <article className={`card lesson${highlight ? ' lesson-next' : ''}${cancelled ? ' lesson-cancelled' : ''}`}>
       <p className="lesson-date">
         {formatLocalDate(lesson.startsAtLocal, true)} · {formatLocalTime(lesson.startsAtLocal)}–{formatLocalTime(lesson.endsAtLocal)}
+        {cancelled && <> <Badge tone="red">{t('lessonStatus.Cancelled')}</Badge></>}
       </p>
       <h3>{lesson.disciplineName}</h3>
       <p className="muted">{lesson.teacherName}</p>
@@ -34,6 +38,7 @@ export function StudentHomePage() {
   const { t } = useTranslation()
   const { me } = useAuth()
   const dash = useLoad(() => api.get<Dashboard>('/api/student/dashboard'), 'dash')
+  const surveys = useLoad(() => api.get<StudentSurveyListItem[]>('/api/student/surveys'), 'surveys')
 
   if (dash.error) return <ErrorBanner error={dash.error} />
   if (!dash.data) return <Loading />
@@ -44,10 +49,12 @@ export function StudentHomePage() {
       <PageHeader title={t('studentHome.greeting', { name: me?.displayName ?? '' })} />
       {me?.groupName && <p className="muted">{me.groupName}</p>}
       <div className="stats">
-        <Link to="/student/surveys" className="card stat">
-          <span className="stat-value">{d.pendingSurveys}</span>
-          <span>{t('studentHome.pendingSurveys')}</span>
-        </Link>
+        {surveys.data ? <SurveyMascot surveys={surveys.data} /> : (
+          <Link to="/student/surveys" className="card stat">
+            <span className="stat-value">{d.pendingSurveys}</span>
+            <span>{t('studentHome.pendingSurveys')}</span>
+          </Link>
+        )}
         <Link to="/student/notifications" className="card stat">
           <span className="stat-value">{d.unreadNotifications}</span>
           <span>{t('studentHome.unread')}</span>
@@ -204,6 +211,7 @@ export function NotificationsPage() {
     try {
       await action()
       list.reload()
+      notifyUnreadChanged()
     } catch (err) {
       setError(toApiError(err))
     }
@@ -226,7 +234,7 @@ export function NotificationsPage() {
           {list.data.map((n) => (
             <li key={n.id} className={n.readAt ? 'read' : 'unread'}>
               <div>
-                <Link to={notificationLink(n)} onClick={() => !n.readAt && void api.post(`/api/notifications/${n.id}/read`)}>
+                <Link to={notificationLink(n)} onClick={() => !n.readAt && void api.post(`/api/notifications/${n.id}/read`).then(notifyUnreadChanged, () => undefined)}>
                   {notificationText(n, t)}
                 </Link>
                 <small className="muted block">{formatInstant(n.createdAt)}</small>

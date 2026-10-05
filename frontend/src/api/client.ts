@@ -13,6 +13,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Must not exceed Paging.MaxPageSize on the server. */
+const MAX_PAGE_SIZE = 200
+
 let csrfToken: string | null = null
 let onUnauthorized: (() => void) | null = null
 
@@ -87,6 +90,17 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   get: async <T>(url: string) => json<T>(await request('GET', url)),
+  /** Loads every page of a paged list, for selects that need the complete list. */
+  getAll: async <T>(url: string): Promise<T[]> => {
+    const items: T[] = []
+    const sep = url.includes('?') ? '&' : '?'
+    for (let page = 1; ; page++) {
+      const res = await json<{ items: T[]; total: number }>(
+        await request('GET', `${url}${sep}page=${page}&pageSize=${MAX_PAGE_SIZE}`))
+      items.push(...res.items)
+      if (res.items.length === 0 || items.length >= res.total) return items
+    }
+  },
   post: async <T>(url: string, body: unknown = {}) => json<T>(await request('POST', url, body)),
   put: async <T>(url: string, body: unknown) => json<T>(await request('PUT', url, body)),
   del: async (url: string) => {

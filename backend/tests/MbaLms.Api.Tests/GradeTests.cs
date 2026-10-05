@@ -115,7 +115,7 @@ public class GradeTests(ApiFactory factory) : TestBase(factory)
         await manager.PutJsonAsync<GradeDto>($"/api/manager/grades/{grade.Id}", new { value = 70 });
         Assert.Equal(1, await CountAsync());
 
-        var changed = await manager.PutJsonAsync<GradeDto>($"/api/manager/grades/{grade.Id}", new { value = 72 });
+        var changed = await manager.PutJsonAsync<GradeDto>($"/api/manager/grades/{grade.Id}", new { value = 72, confirmPublishedChange = true });
         Assert.Equal(GradeStatus.Published, changed.Status);
         Assert.Equal(2, await CountAsync());
 
@@ -135,7 +135,7 @@ public class GradeTests(ApiFactory factory) : TestBase(factory)
         await manager.PutJsonAsync<GradeDto>(url, new { value = 70 });
         await manager.PutJsonAsync<GradeDto>(url, new { value = 70 });
         await manager.PostJsonAsync<GradeDto>($"{url}/publish");
-        await manager.PutJsonAsync<GradeDto>(url, new { value = 80 });
+        await manager.PutJsonAsync<GradeDto>(url, new { value = 80, confirmPublishedChange = true });
         await manager.PostJsonAsync<GradeDto>($"{url}/unpublish");
         await (await manager.DeleteAsync(url)).EnsureStatusAsync(HttpStatusCode.NoContent);
 

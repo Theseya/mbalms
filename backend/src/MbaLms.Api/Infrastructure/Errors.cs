@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -23,7 +24,9 @@ public static class ErrorCodes
     public const string SurveyNotAccepting = "survey_not_accepting";
     public const string SurveyAlreadySubmitted = "survey_already_submitted";
     public const string SurveyHasNoQuestions = "survey_has_no_questions";
+    public const string SurveyWindowEnded = "survey_window_ended";
     public const string InvalidStatusTransition = "invalid_status_transition";
+    public const string PublishedChangeNotConfirmed = "published_change_not_confirmed";
     public const string CsrfFailed = "csrf_failed";
     public const string Forbidden = "forbidden";
     public const string ServerError = "server_error";
@@ -38,8 +41,40 @@ public static class FieldCodes
     public const string Invalid = "invalid";
     public const string Email = "email";
     public const string EndBeforeStart = "end_before_start";
+    public const string NotSameDay = "not_same_day";
     public const string NotFound = "not_found";
     public const string PasswordWeak = "password_weak";
+
+    public static readonly IReadOnlySet<string> All = typeof(FieldCodes)
+        .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+        .Where(f => f.IsLiteral)
+        .Select(f => (string)f.GetRawConstantValue()!)
+        .ToHashSet();
+}
+
+public static class ValidationErrors
+{
+    /// <summary>
+    /// Model state keys of record constructor parameters are C# names ("LastName", "Questions[0].Text");
+    /// the client expects the JSON names ("lastName", "questions[0].text").
+    /// Built-in model binding and JSON messages are English sentences that the client cannot translate,
+    /// so anything that is not a field code becomes "invalid".
+    /// </summary>
+    public static Dictionary<string, string[]> FromModelState(ModelStateDictionary modelState)
+    {
+        var result = new Dictionary<string, string[]>();
+        foreach (var (key, entry) in modelState)
+        {
+            if (entry.Errors.Count == 0) continue;
+            var field = string.Join('.', key.Split('.').Select(JsonNamingPolicy.CamelCase.ConvertName));
+            var messages = entry.Errors
+                .Select(e => FieldCodes.All.Contains(e.ErrorMessage) ? e.ErrorMessage : FieldCodes.Invalid)
+                .Distinct()
+                .ToArray();
+            result[field] = result.TryGetValue(field, out var existing) ? [.. existing, .. messages] : messages;
+        }
+        return result;
+    }
 }
 
 public class AppException(int status, string code, IDictionary<string, string[]>? errors = null) : Exception(code)

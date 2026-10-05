@@ -92,6 +92,7 @@ public class DisciplinesController(AppDbContext db) : ManagerControllerBase(db)
     [HttpPost]
     public async Task<ActionResult<DisciplineDto>> Create(DisciplineRequest r, CancellationToken ct)
     {
+        await EnsureUniqueNameAsync(r.Name, null, ct);
         var d = new Discipline { Id = Guid.CreateVersion7(), Name = r.Name.Trim(), Description = Clean(r.Description) };
         Db.Disciplines.Add(d);
         await Db.SaveChangesAsync(ct);
@@ -102,6 +103,7 @@ public class DisciplinesController(AppDbContext db) : ManagerControllerBase(db)
     public async Task<DisciplineDto> Update(Guid id, DisciplineRequest r, CancellationToken ct)
     {
         var d = await Db.Disciplines.FindAsync([id], ct) ?? throw AppException.NotFound();
+        await EnsureUniqueNameAsync(r.Name, id, ct);
         d.Name = r.Name.Trim();
         d.Description = Clean(r.Description);
         await Db.SaveChangesAsync(ct);
@@ -118,6 +120,13 @@ public class DisciplinesController(AppDbContext db) : ManagerControllerBase(db)
         Db.Disciplines.Remove(d);
         await Db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    private async Task EnsureUniqueNameAsync(string name, Guid? id, CancellationToken ct)
+    {
+        var trimmed = name.Trim();
+        if (await Db.Disciplines.AnyAsync(d => d.Id != id && d.Name.ToLower() == trimmed.ToLower(), ct))
+            throw AppException.Validation(nameof(DisciplineRequest.Name), ErrorCodes.Duplicate);
     }
 }
 

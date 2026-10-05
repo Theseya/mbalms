@@ -1,16 +1,19 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Discipline, Grade, GradeHistoryEntry, GradeStatus, Group, Period, Student } from '../../api/types'
-import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select } from '../../components/ui'
+import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select, type ConfirmOptions } from '../../components/ui'
 import { formatInstant } from '../../lib/format'
 import { parseGrade } from '../../lib/grades'
 import { groupLabel } from '../../lib/labels'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
 interface Form {
   id: string | null
+  original: Grade | null
   status: Grade['status'] | null
   studentId: string
   disciplineId: string
@@ -26,7 +29,7 @@ export function GradesPage() {
   const groups = useLoad(() => api.get<Group[]>('/api/manager/groups?status=All'), 'groups')
   const periods = useLoad(() => api.get<Period[]>('/api/manager/periods'), 'periods')
   const disciplines = useLoad(() => api.get<Discipline[]>('/api/manager/disciplines'), 'disciplines')
-  const students = useLoad(() => api.get<Student[]>(`/api/manager/students${query({ groupId })}`), `students-${groupId}`)
+  const students = useLoad(() => api.getAll<Student>(`/api/manager/students${query({ groupId })}`), `students-${groupId}`)
   const q = query({ groupId, periodId, disciplineId })
   const list = useLoad(() => api.get<Grade[]>(`/api/manager/grades${q}`), q)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -37,6 +40,7 @@ export function GradesPage() {
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
 
   const isEditable = (g: Grade) => groups.data?.find((x) => x.id === g.groupId)?.status !== 'Archived'
   const drafts = list.data?.filter((g) => g.status === 'Draft' && isEditable(g)) ?? []
@@ -46,6 +50,7 @@ export function GradesPage() {
     setLocalError(null)
     setForm({
       id: g?.id ?? null,
+      original: g ?? null,
       status: g?.status ?? null,
       studentId: g?.studentId ?? '',
       disciplineId: g?.disciplineId ?? disciplineId,
@@ -63,10 +68,17 @@ export function GradesPage() {
       return
     }
     setLocalError(null)
+    const original = form.original
+    const confirmPublishedChange = original?.status === 'Published' && original.value !== parsed.value
+    if (confirmPublishedChange && !(await confirm({
+      title: t('grades.confirmChangeTitle'),
+      message: t('grades.confirmChange', { student: original.studentName, old: original.value, new: parsed.value }),
+      confirmLabel: t('grades.confirmChangeAction'),
+    }))) return
     setSaving(true)
     setError(null)
     try {
-      if (form.id) await api.put(`/api/manager/grades/${form.id}`, { value: parsed.value })
+      if (form.id) await api.put(`/api/manager/grades/${form.id}`, { value: parsed.value, confirmPublishedChange })
       else
         await api.post('/api/manager/grades', {
           studentId: form.studentId || null,
@@ -83,8 +95,8 @@ export function GradesPage() {
     }
   }
 
-  const act = async (action: () => Promise<unknown>, confirmText?: string) => {
-    if (confirmText && !window.confirm(confirmText)) return
+  const act = async (action: () => Promise<unknown>, confirmOptions?: ConfirmOptions) => {
+    if (confirmOptions && !(await confirm(confirmOptions))) return
     setActionError(null)
     try {
       await action()
@@ -110,6 +122,7 @@ export function GradesPage() {
         title={t('grades.title')}
         actions={
           <>
+            <Link className="btn" to="/manager/gradebook">{t('nav.gradebook')}</Link>
             <ExportButton url={`/api/manager/exports/grades${q}`} />
             {selected.size > 0 && (
               <button type="button" className="btn"
@@ -187,7 +200,12 @@ export function GradesPage() {
                                 {t('grades.publish')}
                               </button>
                               <button type="button" className="btn btn-small btn-danger"
-                                onClick={() => act(() => api.del(`/api/manager/grades/${g.id}`), t('common.confirmDelete'))}>
+                                onClick={() => act(() => api.del(`/api/manager/grades/${g.id}`), {
+                                  title: t('grades.confirmDeleteTitle'),
+                                  message: t('grades.confirmDelete', { value: g.value, student: g.studentName, discipline: g.disciplineName }),
+                                  confirmLabel: t('common.delete'),
+                                  danger: true,
+                                })}>
                                 {t('common.delete')}
                               </button>
                             </>
@@ -242,6 +260,7 @@ export function GradesPage() {
       )}
 
       {historyFor && <GradeHistoryModal grade={historyFor} onClose={() => setHistoryFor(null)} />}
+      {dialog}
     </>
   )
 }

@@ -11,7 +11,7 @@ namespace MbaLms.Api.Controllers;
 
 public record StudentLessonDto(Guid Id, string DisciplineName, string TeacherName,
     DateTimeOffset StartsAt, DateTimeOffset EndsAt, DateTime StartsAtLocal, DateTime EndsAtLocal,
-    LessonFormat? Format, string? Location, string? Comment);
+    LessonFormat? Format, string? Location, string? Comment, LessonStatus Status);
 
 public record StudentGradeDto(Guid Id, string DisciplineName, string PeriodName, int Value, DateTimeOffset? PublishedAt);
 
@@ -47,7 +47,7 @@ public class StudentController(AppDbContext db, CurrentUser current, AppTime tim
     {
         var student = await current.GetStudentAsync(ct);
         var now = time.UtcNow;
-        var upcoming = await LessonsQuery(student.GroupId).Where(l => l.EndsAt >= now)
+        var upcoming = await LessonsQuery(student.GroupId).Where(l => l.EndsAt >= now && l.Status == LessonStatus.Scheduled)
             .OrderBy(l => l.StartsAt).Take(5).ToListAsync(ct);
         var lessons = upcoming.Select(ToDto).ToList();
 
@@ -141,7 +141,15 @@ public class StudentController(AppDbContext db, CurrentUser current, AppTime tim
             Answers = SurveyAnswerValidator.Validate(survey, request.Answers)
         };
         db.SurveyResponses.Add(response);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException e) when (e.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+        {
+            // A parallel request from the same student won the race; the unique index enforces one response.
+            throw AppException.Conflict(ErrorCodes.SurveyAlreadySubmitted);
+        }
         return Created($"/api/student/surveys/{id}", new { id = response.Id, submittedAt = response.SubmittedAt });
     }
 
@@ -158,7 +166,7 @@ public class StudentController(AppDbContext db, CurrentUser current, AppTime tim
         grades.Select(g => new StudentGradeDto(g.Id, g.Discipline!.Name, g.Period!.Name, g.Value, g.PublishedAt));
 
     private StudentLessonDto ToDto(Lesson l) => new(l.Id, l.Discipline!.Name, l.Teacher!.FullName,
-        l.StartsAt, l.EndsAt, time.ToLocal(l.StartsAt), time.ToLocal(l.EndsAt), l.Format, l.Location, l.Comment);
+        l.StartsAt, l.EndsAt, time.ToLocal(l.StartsAt), time.ToLocal(l.EndsAt), l.Format, l.Location, l.Comment, l.Status);
 
     private static bool IsWithinWindow(DateTimeOffset? opens, DateTimeOffset? closes, DateTimeOffset now) =>
         (opens is null || now >= opens) && (closes is null || now < closes);
@@ -171,7 +179,10 @@ public class StudentController(AppDbContext db, CurrentUser current, AppTime tim
 
 public static class SurveyAnswerValidator
 {
-    /// <summary>Checks required questions, value ranges and option ownership; returns answer entities.</summary>
+    /// <summary>
+    /// Checks question ownership, required questions, value ranges, option ownership and that each answer
+    /// carries only the value kind of its question type; returns answer entities.
+    /// </summary>
     public static List<SurveyAnswer> Validate(Survey survey, IReadOnlyList<SubmitAnswerRequest> answers)
     {
         var errors = new Dictionary<string, string[]>();
@@ -192,6 +203,7 @@ public static class SurveyAnswerValidator
             byQuestion.TryGetValue(q.Id, out var a);
             var answer = new SurveyAnswer { Id = Guid.CreateVersion7(), QuestionId = q.Id };
             var provided = false;
+            if (a is not null && HasValueOfOtherKind(q.Type, a)) { errors[key] = [FieldCodes.Invalid]; continue; }
 
             switch (q.Type)
             {
@@ -220,4 +232,11 @@ public static class SurveyAnswerValidator
         if (errors.Count > 0) throw AppException.Validation(errors);
         return result;
     }
+
+    private static bool HasValueOfOtherKind(QuestionType type, SubmitAnswerRequest a) => type switch
+    {
+        QuestionType.Scale => a.OptionId is not null || a.TextValue is not null,
+        QuestionType.SingleChoice => a.IntValue is not null || a.TextValue is not null,
+        _ => a.IntValue is not null || a.OptionId is not null
+    };
 }

@@ -10,7 +10,7 @@ namespace MbaLms.Api.Controllers.Manager;
 public record SurveyOptionDto(Guid Id, int Order, string Text);
 
 public record SurveyQuestionDto(Guid Id, int Order, string Text, QuestionType Type, bool IsRequired,
-    int? ScaleMin, int? ScaleMax, List<SurveyOptionDto> Options);
+    int? ScaleMin, int? ScaleMax, string? ScaleMinLabel, string? ScaleMaxLabel, List<SurveyOptionDto> Options);
 
 public record SurveyListItemDto(Guid Id, SurveyType Type, string Title, SurveyStatus Status,
     Guid GroupId, string GroupName, GroupStatus GroupStatus, string? TeacherName, string? DisciplineName,
@@ -20,7 +20,7 @@ public record SurveyListItemDto(Guid Id, SurveyType Type, string Title, SurveySt
 public record SurveyDetailDto(Guid Id, SurveyType Type, string Title, string? Description, SurveyStatus Status,
     Guid GroupId, string GroupName, GroupStatus GroupStatus, Guid? TeacherId, string? TeacherName,
     Guid? DisciplineId, string? DisciplineName, DateTime? OpensAtLocal, DateTime? ClosesAtLocal,
-    DateTimeOffset? PublishedAt, int ResponseCount, List<SurveyQuestionDto> Questions);
+    DateTimeOffset? PublishedAt, int ResponseCount, int StudentCount, List<SurveyQuestionDto> Questions);
 
 public record SurveyQuestionRequest(
     [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(1000, ErrorMessage = FieldCodes.MaxLength)] string Text,
@@ -28,7 +28,9 @@ public record SurveyQuestionRequest(
     bool IsRequired,
     int? ScaleMin,
     int? ScaleMax,
-    List<string>? Options);
+    List<string>? Options,
+    [MaxLength(100, ErrorMessage = FieldCodes.MaxLength)] string? ScaleMinLabel = null,
+    [MaxLength(100, ErrorMessage = FieldCodes.MaxLength)] string? ScaleMaxLabel = null);
 
 /// <param name="OpensAt">Optional wall-clock time in the application time zone.</param>
 /// <param name="ClosesAt">Optional wall-clock time in the application time zone.</param>
@@ -88,9 +90,11 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
                     .FirstOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw AppException.NotFound();
         var responseCount = await Db.SurveyResponses.CountAsync(r => r.SurveyId == id, ct);
+        var studentCount = await Db.Students.CountAsync(st => st.GroupId == s.GroupId, ct);
         return new SurveyDetailDto(s.Id, s.Type, s.Title, s.Description, s.Status, s.GroupId, s.Group!.Name, s.Group.Status,
             s.TeacherId, s.Teacher?.FullName, s.DisciplineId, s.Discipline?.Name,
-            time.ToLocal(s.OpensAt), time.ToLocal(s.ClosesAt), s.PublishedAt, responseCount, MapQuestions(s.Questions));
+            time.ToLocal(s.OpensAt), time.ToLocal(s.ClosesAt), s.PublishedAt, responseCount, studentCount,
+            MapQuestions(s.Questions));
     }
 
     [HttpPost]
@@ -117,12 +121,16 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
         await Db.SaveChangesAsync(ct);
         survey.Questions.Clear();
         await ApplyAsync(survey, r, ct);
+        // New questions carry client-side keys, so they must be marked as inserts explicitly.
+        Db.SurveyQuestions.AddRange(survey.Questions);
         await Db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await Get(id, ct);
     }
 
-    /// <summary>Opens the survey for responses. Students of the group are notified the first time.</summary>
+    /// <summary>
+    /// Publishes (or reopens) the survey. Students of the group are notified only on the first publication.
+    /// </summary>
     [HttpPost("{id:guid}/open")]
     public async Task<SurveyDetailDto> Open(Guid id, CancellationToken ct)
     {
@@ -130,6 +138,7 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
                      ?? throw AppException.NotFound();
         if (survey.Status == SurveyStatus.Open) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
         if (survey.Questions.Count == 0) throw AppException.Conflict(ErrorCodes.SurveyHasNoQuestions);
+        if (survey.ClosesAt is not null && survey.ClosesAt <= time.UtcNow) throw AppException.Conflict(ErrorCodes.SurveyWindowEnded);
         await RequireActiveGroupAsync(survey.GroupId, "groupId", ct);
 
         survey.Status = SurveyStatus.Open;
@@ -188,14 +197,21 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
 
     internal static List<SurveyQuestionDto> MapQuestions(IEnumerable<SurveyQuestion> questions) =>
         questions.OrderBy(q => q.Order).Select(q => new SurveyQuestionDto(q.Id, q.Order, q.Text, q.Type, q.IsRequired,
-            q.ScaleMin, q.ScaleMax,
+            q.ScaleMin, q.ScaleMax, q.ScaleMinLabel, q.ScaleMaxLabel,
             q.Options.OrderBy(o => o.Order).Select(o => new SurveyOptionDto(o.Id, o.Order, o.Text)).ToList())).ToList();
 
     private async Task ApplyAsync(Survey survey, SurveyRequest r, CancellationToken ct)
     {
         await RequireActiveGroupAsync(r.GroupId, nameof(r.GroupId), ct);
-        if (r.TeacherId is not null) await RequireExistsAsync<Teacher>(r.TeacherId, nameof(r.TeacherId), ct);
-        if (r.DisciplineId is not null) await RequireExistsAsync<Discipline>(r.DisciplineId, nameof(r.DisciplineId), ct);
+        // A teaching evaluation is always about a specific teacher and discipline; a service survey is about neither.
+        var teaching = r.Type == SurveyType.TeachingEvaluation;
+        if (teaching)
+        {
+            if (r.TeacherId is null) throw AppException.Validation(nameof(r.TeacherId), FieldCodes.Required);
+            if (r.DisciplineId is null) throw AppException.Validation(nameof(r.DisciplineId), FieldCodes.Required);
+            await RequireExistsAsync<Teacher>(r.TeacherId, nameof(r.TeacherId), ct);
+            await RequireExistsAsync<Discipline>(r.DisciplineId, nameof(r.DisciplineId), ct);
+        }
         var opens = time.ToUtc(r.OpensAt, nameof(r.OpensAt));
         var closes = time.ToUtc(r.ClosesAt, nameof(r.ClosesAt));
         if (opens is not null && closes is not null && closes <= opens)
@@ -205,8 +221,8 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
         survey.Title = r.Title.Trim();
         survey.Description = Clean(r.Description);
         survey.GroupId = r.GroupId!.Value;
-        survey.TeacherId = r.TeacherId;
-        survey.DisciplineId = r.DisciplineId;
+        survey.TeacherId = teaching ? r.TeacherId : null;
+        survey.DisciplineId = teaching ? r.DisciplineId : null;
         survey.OpensAt = opens;
         survey.ClosesAt = closes;
 
@@ -238,6 +254,8 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
                     throw AppException.Validation($"{path}.scaleMax", FieldCodes.Range);
                 question.ScaleMin = q.ScaleMin;
                 question.ScaleMax = q.ScaleMax;
+                question.ScaleMinLabel = Clean(q.ScaleMinLabel);
+                question.ScaleMaxLabel = Clean(q.ScaleMaxLabel);
                 break;
             case QuestionType.SingleChoice:
                 var options = (q.Options ?? []).Select(o => o?.Trim()).Where(o => !string.IsNullOrEmpty(o)).ToList();

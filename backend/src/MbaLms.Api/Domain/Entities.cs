@@ -84,6 +84,7 @@ public class Lesson
     public LessonFormat? Format { get; set; }
     public string? Location { get; set; }
     public string? Comment { get; set; }
+    public LessonStatus Status { get; set; } = LessonStatus.Scheduled;
 }
 
 public class Grade
@@ -157,6 +158,8 @@ public class SurveyQuestion
     public bool IsRequired { get; set; }
     public int? ScaleMin { get; set; }
     public int? ScaleMax { get; set; }
+    public string? ScaleMinLabel { get; set; }
+    public string? ScaleMaxLabel { get; set; }
     public List<SurveyQuestionOption> Options { get; set; } = [];
 }
 

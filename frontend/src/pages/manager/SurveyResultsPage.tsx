@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import type { SurveyDetail, SurveyQuestion, SurveyResponse } from '../../api/types'
 import { Badge, Empty, ErrorBanner, ExportButton, Loading, PageHeader } from '../../components/ui'
-import { formatInstant } from '../../lib/format'
+import { formatInstant, formatNumber } from '../../lib/format'
 import { surveyStatusTone as statusTone } from '../../lib/labels'
 import { useLoad } from '../../lib/useLoad'
 
@@ -21,10 +21,13 @@ function Summary({ q, responses }: { q: SurveyQuestion; responses: SurveyRespons
   if (q.type === 'Scale') {
     const values = answers.map((a) => a.intValue).filter((v): v is number => v !== null)
     const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : null
+    const bound = (value: number | null, label: string | null) => (label ? `${value} ${t('surveys.quoted', { text: label })}` : `${value}`)
     return (
       <p>
-        {t('surveys.average')}: <strong>{avg === null ? '—' : avg.toFixed(2)}</strong>{' '}
-        <span className="muted">({q.scaleMin}–{q.scaleMax}, n = {values.length})</span>
+        {t('surveys.average')}: <strong>{formatNumber(avg)}</strong>{' '}
+        <span className="muted">
+          ({bound(q.scaleMin, q.scaleMinLabel)} – {bound(q.scaleMax, q.scaleMaxLabel)}, {t('surveys.answerCount', { count: values.length })})
+        </span>
       </p>
     )
   }
@@ -45,7 +48,7 @@ function Summary({ q, responses }: { q: SurveyQuestion; responses: SurveyRespons
       </ul>
     )
   }
-  return <p className="muted">n = {answers.filter((a) => a.textValue).length}</p>
+  return <p className="muted">{t('surveys.answerCount', { count: answers.filter((a) => a.textValue).length })}</p>
 }
 
 export function SurveyResultsPage() {
@@ -75,6 +78,7 @@ export function SurveyResultsPage() {
         {t(`surveyType.${s.type}`)} · {s.groupName}{s.teacherName ? ` · ${s.teacherName}` : ''}
       </p>
       <p className="muted">{t('surveys.notAnonymous')}</p>
+      <p>{t('surveys.answeredOf', { count: rs.length, total: s.studentCount })}</p>
 
       {rs.length === 0 ? <Empty>{t('surveys.noResponses')}</Empty> : (
         <>

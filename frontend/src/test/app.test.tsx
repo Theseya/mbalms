@@ -5,31 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Grade, GradeHistoryEntry, SurveyQuestion } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { setLanguage } from '../i18n'
-import en from '../i18n/en'
-import ru from '../i18n/ru'
 import { parseGrade } from '../lib/grades'
 import { LoginPage } from '../pages/LoginPage'
 import { GradesPage } from '../pages/manager/GradesPage'
 import { validateAnswers } from '../lib/surveyValidation'
-
-function keys(obj: object, prefix = ''): string[] {
-  return Object.entries(obj).flatMap(([k, v]) =>
-    typeof v === 'object' && v !== null ? keys(v, `${prefix}${k}.`) : [`${prefix}${k}`])
-}
-
-describe('localization', () => {
-  it('has the same keys in Russian and English', () => {
-    expect(keys(en).sort()).toEqual(keys(ru).sort())
-  })
-
-  it('has no empty translations', () => {
-    const empty = [...keys(ru), ...keys(en)].filter((k) => {
-      const value = k.split('.').reduce<unknown>((o, p) => (o as Record<string, unknown>)[p], ru)
-      return value === ''
-    })
-    expect(empty).toEqual([])
-  })
-})
 
 describe('parseGrade', () => {
   it.each(['0', '55', '100'])('accepts %s', (v) => {
@@ -49,10 +28,12 @@ describe('parseGrade', () => {
 
 describe('validateAnswers', () => {
   const questions: SurveyQuestion[] = [
-    { id: 'q1', order: 0, text: 'Scale', type: 'Scale', isRequired: true, scaleMin: 1, scaleMax: 5, options: [] },
+    { id: 'q1', order: 0, text: 'Scale', type: 'Scale', isRequired: true, scaleMin: 1, scaleMax: 5,
+      scaleMinLabel: null, scaleMaxLabel: null, options: [] },
     { id: 'q2', order: 1, text: 'Choice', type: 'SingleChoice', isRequired: true, scaleMin: null, scaleMax: null,
-      options: [{ id: 'o1', order: 0, text: 'A' }] },
-    { id: 'q3', order: 2, text: 'Text', type: 'Text', isRequired: false, scaleMin: null, scaleMax: null, options: [] },
+      scaleMinLabel: null, scaleMaxLabel: null, options: [{ id: 'o1', order: 0, text: 'A' }] },
+    { id: 'q3', order: 2, text: 'Text', type: 'Text', isRequired: false, scaleMin: null, scaleMax: null,
+      scaleMinLabel: null, scaleMaxLabel: null, options: [] },
   ]
 
   it('requires mandatory questions', () => {
@@ -112,7 +93,10 @@ describe('GradesPage history', () => {
     setLanguage('ru')
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.includes('/history') ? history : url.includes('/api/manager/grades') ? [grade] : []
+      const body = url.includes('/history') ? history
+        : url.includes('/api/manager/grades') ? [grade]
+        : url.includes('/api/manager/students') ? { items: [], total: 0, page: 1, pageSize: 200 }
+        : []
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
   })

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,12 @@ namespace MbaLms.Api.Infrastructure;
 /// </summary>
 public class NotificationService(AppDbContext db, AppTime time)
 {
+    /// <summary>Same conventions as API responses: camelCase names and enums as strings.</summary>
+    private static readonly JsonSerializerOptions PayloadOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     public async Task NotifyGroupAsync(Guid groupId, NotificationType type, object payload, CancellationToken ct)
     {
         var userIds = await db.Students.Where(s => s.GroupId == groupId).Select(s => s.UserId).ToListAsync(ct);
@@ -25,7 +32,7 @@ public class NotificationService(AppDbContext db, AppTime time)
             Id = Guid.CreateVersion7(),
             UserId = userId,
             Type = type,
-            PayloadJson = JsonSerializer.Serialize(payload, JsonSerializerOptions.Web),
+            PayloadJson = JsonSerializer.Serialize(payload, PayloadOptions),
             CreatedAt = time.UtcNow
         });
     }

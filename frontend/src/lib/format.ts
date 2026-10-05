@@ -32,6 +32,11 @@ export function formatLocalTime(value: LocalDateTime | null | undefined): string
   return new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }).format(wallClock(value))
 }
 
+export function formatNumber(value: number | null | undefined, fractionDigits = 2): string {
+  if (value === null || value === undefined) return '—'
+  return new Intl.NumberFormat(locale(), { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value)
+}
+
 let appTimeZone = 'Europe/Moscow'
 
 export function setAppTimeZone(tz: string) {

@@ -2,9 +2,13 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
-import type { Group, Student } from '../../api/types'
-import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select } from '../../components/ui'
+import type { Group, PagedResult, Student } from '../../api/types'
+import {
+  Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField, Select,
+} from '../../components/ui'
 import { groupLabel } from '../../lib/labels'
+import { PAGE_SIZE, useDebounced } from '../../lib/paging'
+import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
@@ -24,20 +28,32 @@ export function StudentsPage() {
   const groupId = params.get('groupId') ?? ''
   const includeArchived = params.get('archived') === '1'
   const groups = useLoad(() => api.get<Group[]>('/api/manager/groups?status=All'), 'groups')
-  const listQuery = query({ groupId, includeArchived: includeArchived || undefined })
-  const list = useLoad(() => api.get<Student[]>(`/api/manager/students${listQuery}`), listQuery)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const debouncedSearch = useDebounced(search.trim())
+  const filterQuery = query({ groupId, includeArchived: includeArchived || undefined, search: debouncedSearch })
+  const listQuery = query({ groupId, includeArchived: includeArchived || undefined, search: debouncedSearch, page, pageSize: PAGE_SIZE })
+  const list = useLoad(() => api.get<PagedResult<Student>>(`/api/manager/students${listQuery}`), listQuery)
   const [form, setForm] = useState<Form | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
   const fieldError = useFieldError(error)
+  const { confirm, dialog } = useConfirm()
   const activeGroups = groups.data?.filter((g) => g.status === 'Active')
+  const rows = list.data?.items ?? []
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
     else next.delete(key)
     setParams(next, { replace: true })
+    setPage(1)
+  }
+
+  const onSearch = (value: string) => {
+    setSearch(value)
+    setPage(1)
   }
 
   const open = (s?: Student) => {
@@ -79,11 +95,18 @@ export function StudentsPage() {
   }
 
   const onDelete = async (s: Student) => {
-    if (!window.confirm(t('common.confirmDelete'))) return
+    const ok = await confirm({
+      title: t('students.confirmDeleteTitle'),
+      message: t('students.confirmDelete', { name: s.fullName, email: s.email }),
+      confirmLabel: t('common.delete'),
+      danger: true,
+    })
+    if (!ok) return
     setActionError(null)
     try {
       await api.del(`/api/manager/students/${s.id}`)
-      list.reload()
+      if (rows.length === 1 && page > 1) setPage(page - 1)
+      else list.reload()
     } catch (err) {
       setActionError(toApiError(err))
     }
@@ -97,12 +120,13 @@ export function StudentsPage() {
         title={t('students.title')}
         actions={
           <>
-            <ExportButton url={`/api/manager/exports/students${listQuery}`} />
+            <ExportButton url={`/api/manager/exports/students${filterQuery}`} />
             <button type="button" className="btn btn-primary" onClick={() => open()}>{t('students.new')}</button>
           </>
         }
       />
       <div className="filters">
+        <SearchField value={search} onChange={onSearch} placeholder={t('students.searchPlaceholder')} />
         <Field label={t('common.filterGroup')}>
           {(id) => (
             <Select id={id} value={groupId} onChange={(v) => setFilter('groupId', v)} items={groups.data}
@@ -117,7 +141,7 @@ export function StudentsPage() {
         )}
       </div>
       <ErrorBanner error={list.error ?? actionError} />
-      {list.loading && !list.data ? <Loading /> : !list.data?.length ? <Empty /> : (
+      {list.loading && !list.data ? <Loading /> : !rows.length ? <Empty /> : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -129,7 +153,7 @@ export function StudentsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.data.map((s) => (
+              {rows.map((s) => (
                 <tr key={s.id}>
                   <td data-label={t('students.fullName')}>{s.fullName}</td>
                   <td data-label={t('common.email')}>{s.email}</td>
@@ -147,6 +171,7 @@ export function StudentsPage() {
           </table>
         </div>
       )}
+      {list.data && <Pagination page={list.data.page} pageSize={list.data.pageSize} total={list.data.total} onChange={setPage} />}
 
       {form && (
         <Modal title={form.id ? t('students.editTitle') : t('students.new')} onClose={() => setForm(null)}>
@@ -188,6 +213,7 @@ export function StudentsPage() {
           </form>
         </Modal>
       )}
+      {dialog}
     </>
   )
 }

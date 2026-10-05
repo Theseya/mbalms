@@ -47,7 +47,7 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
     [HttpPost]
     public async Task<ActionResult<GroupDto>> Create(GroupRequest request, CancellationToken ct)
     {
-        Validate(request);
+        await ValidateAsync(request, null, ct);
         var programId = await Db.Programs.Select(p => p.Id).FirstAsync(ct);
         var group = new Group
         {
@@ -65,8 +65,8 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
     [HttpPut("{id:guid}")]
     public async Task<GroupDto> Update(Guid id, GroupRequest request, CancellationToken ct)
     {
-        Validate(request);
         var group = await Db.Groups.FindAsync([id], ct) ?? throw AppException.NotFound();
+        await ValidateAsync(request, id, ct);
         group.Name = request.Name.Trim();
         group.StartDate = request.StartDate;
         group.EndDate = request.EndDate;
@@ -111,9 +111,12 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
         return NoContent();
     }
 
-    private static void Validate(GroupRequest r)
+    private async Task ValidateAsync(GroupRequest r, Guid? id, CancellationToken ct)
     {
         if (r.StartDate is not null && r.EndDate is not null && r.EndDate < r.StartDate)
             throw AppException.Validation(nameof(r.EndDate), FieldCodes.EndBeforeStart);
+        var name = r.Name.Trim();
+        if (await Db.Groups.AnyAsync(g => g.Id != id && g.Name.ToLower() == name.ToLower(), ct))
+            throw AppException.Validation(nameof(r.Name), ErrorCodes.Duplicate);
     }
 }
