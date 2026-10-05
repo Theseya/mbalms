@@ -16,3 +16,21 @@ export function mascotState(surveys: StudentSurveyListItem[]): MascotState {
     return { mood: 'pending', remaining: pending.length, link: pending.length === 1 ? `/student/surveys/${pending[0].id}` : '/student/surveys' }
   return { mood: surveys.some((s) => s.submitted) ? 'done' : 'none', remaining: 0, link: '/student/surveys' }
 }
+
+/**
+ * Per-card mood on the student surveys list. Uses the same response flags as the badges/buttons
+ * (submitted / canRespond) — no separate client state.
+ */
+export function surveyCardMood(survey: StudentSurveyListItem): MascotMood {
+  if (survey.submitted) return 'done'
+  if (survey.canRespond) return 'pending'
+  return 'none'
+}
+
+/** i18n key for the card caption; closed vs other unavailable both use mood `none` but different copy. */
+export function surveyCardCaptionKey(survey: StudentSurveyListItem):
+  'studentSurveys.mascot.notCompleted' | 'studentSurveys.mascot.completed' | 'studentSurveys.mascot.closed' | 'studentSurveys.mascot.unavailable' {
+  if (survey.submitted) return 'studentSurveys.mascot.completed'
+  if (survey.canRespond) return 'studentSurveys.mascot.notCompleted'
+  return survey.status === 'Closed' ? 'studentSurveys.mascot.closed' : 'studentSurveys.mascot.unavailable'
+}

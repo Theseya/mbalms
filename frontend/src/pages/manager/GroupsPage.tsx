@@ -93,6 +93,7 @@ export function GroupsPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('groups.title')}
         actions={

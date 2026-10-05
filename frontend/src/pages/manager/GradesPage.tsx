@@ -120,6 +120,7 @@ export function GradesPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('grades.title')}
         actions={

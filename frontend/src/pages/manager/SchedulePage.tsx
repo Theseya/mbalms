@@ -126,6 +126,7 @@ export function SchedulePage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('schedule.title')}
         actions={

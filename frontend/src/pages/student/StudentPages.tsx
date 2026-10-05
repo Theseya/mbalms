@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { ApiError, api } from '../../api/client'
 import type { AppNotification, Dashboard, StudentGrade, StudentLesson, StudentSurveyListItem } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
-import { SurveyMascot } from '../../components/SurveyMascot'
+import { SurveyCardMascot, SurveyMascot } from '../../components/SurveyMascot'
 import { Badge, Empty, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatInstant, formatLocalDate, formatLocalDateTime, formatLocalTime, getAppTimeZone } from '../../lib/format'
 import { notificationText } from '../../lib/labels'
@@ -45,7 +45,7 @@ export function StudentHomePage() {
   const d = dash.data
 
   return (
-    <>
+    <div className="student-dashboard">
       <PageHeader title={t('studentHome.greeting', { name: me?.displayName ?? '' })} />
       {me?.groupName && <p className="muted">{me.groupName}</p>}
       <div className="stats">
@@ -61,36 +61,38 @@ export function StudentHomePage() {
         </Link>
       </div>
 
-      <section>
-        <h2>{t('studentHome.nextLesson')}</h2>
-        {d.nextLesson ? <LessonCard lesson={d.nextLesson} highlight /> : <Empty>{t('studentHome.noNextLesson')}</Empty>}
-        {d.upcomingLessons.length > 1 && (
-          <>
-            <h3>{t('studentHome.upcoming')}</h3>
+      <div className="dashboard-grid">
+        <section>
+          <h2>{t('studentHome.nextLesson')}</h2>
+          {d.nextLesson ? <LessonCard lesson={d.nextLesson} highlight /> : <Empty>{t('studentHome.noNextLesson')}</Empty>}
+          {d.upcomingLessons.length > 1 && (
+            <>
+              <h3>{t('studentHome.upcoming')}</h3>
+              <ul className="plain-list">
+                {d.upcomingLessons.slice(1).map((l) => (
+                  <li key={l.id}>
+                    <strong>{formatLocalDateTime(l.startsAtLocal)}</strong> — {l.disciplineName}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <Link to="/student/schedule">{t('studentHome.allSchedule')} →</Link>
+        </section>
+
+        <section>
+          <h2>{t('studentHome.recentGrades')}</h2>
+          {d.recentGrades.length === 0 ? <Empty>{t('studentHome.noGrades')}</Empty> : (
             <ul className="plain-list">
-              {d.upcomingLessons.slice(1).map((l) => (
-                <li key={l.id}>
-                  <strong>{formatLocalDateTime(l.startsAtLocal)}</strong> — {l.disciplineName}
-                </li>
+              {d.recentGrades.map((g) => (
+                <li key={g.id}><strong className="grade">{g.value}</strong> {g.disciplineName} <span className="muted">({g.periodName})</span></li>
               ))}
             </ul>
-          </>
-        )}
-        <Link to="/student/schedule">{t('studentHome.allSchedule')} →</Link>
-      </section>
-
-      <section>
-        <h2>{t('studentHome.recentGrades')}</h2>
-        {d.recentGrades.length === 0 ? <Empty>{t('studentHome.noGrades')}</Empty> : (
-          <ul className="plain-list">
-            {d.recentGrades.map((g) => (
-              <li key={g.id}><strong className="grade">{g.value}</strong> {g.disciplineName} <span className="muted">({g.periodName})</span></li>
-            ))}
-          </ul>
-        )}
-        <Link to="/student/grades">{t('studentHome.allGrades')} →</Link>
-      </section>
-    </>
+          )}
+          <Link to="/student/grades">{t('studentHome.allGrades')} →</Link>
+        </section>
+      </div>
+    </div>
   )
 }
 
@@ -110,6 +112,7 @@ export function StudentSchedulePage() {
   const shown = showPast ? past : upcoming
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader title={t('schedule.title')} />
       <p className="muted">{t('schedule.timeZoneNote', { tz: getAppTimeZone() })}</p>
       <div className="tabs" role="tablist">
@@ -135,6 +138,7 @@ export function StudentGradesPage() {
   const grades = useLoad(() => api.get<StudentGrade[]>('/api/student/grades'), 'grades')
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader title={t('grades.title')} />
       <ErrorBanner error={grades.error} />
       {grades.loading && !grades.data ? <Loading /> : !grades.data?.length ? <Empty>{t('studentHome.noGrades')}</Empty> : (
@@ -170,23 +174,27 @@ export function StudentSurveysPage() {
   const surveys = useLoad(() => api.get<StudentSurveyListItem[]>('/api/student/surveys'), 'surveys')
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader title={t('studentSurveys.title')} />
       <ErrorBanner error={surveys.error} />
       {surveys.loading && !surveys.data ? <Loading /> : !surveys.data?.length ? <Empty>{t('studentSurveys.noSurveys')}</Empty> : (
         <div className="survey-list">
           {surveys.data.map((s) => (
-            <article key={s.id} className="card">
-              <p className="muted">{t(`surveyType.${s.type}`)}{s.teacherName ? ` · ${s.teacherName}` : ''}</p>
-              <h3>{s.title}</h3>
-              <p>
-                {s.submitted ? <Badge tone="green">{t('studentSurveys.submitted')}</Badge>
-                  : s.canRespond ? <Badge tone="amber">{t('studentSurveys.pending')}</Badge>
-                    : <Badge tone="gray">{t('studentSurveys.unavailable')}</Badge>}
-                {s.closesAtLocal && <span className="muted"> · {t('surveys.closesAt')}: {formatLocalDateTime(s.closesAtLocal)}</span>}
-              </p>
-              <Link to={`/student/surveys/${s.id}`} className={s.canRespond ? 'btn btn-primary' : 'btn'}>
-                {s.canRespond ? t('studentSurveys.answer') : t('studentSurveys.view')}
-              </Link>
+            <article key={s.id} className="card survey-card">
+              <SurveyCardMascot survey={s} />
+              <div className="survey-card-body">
+                <p className="muted">{t(`surveyType.${s.type}`)}{s.teacherName ? ` · ${s.teacherName}` : ''}</p>
+                <h3>{s.title}</h3>
+                <p>
+                  {s.submitted ? <Badge tone="green">{t('studentSurveys.submitted')}</Badge>
+                    : s.canRespond ? <Badge tone="amber">{t('studentSurveys.pending')}</Badge>
+                      : <Badge tone="gray">{t('studentSurveys.unavailable')}</Badge>}
+                  {s.closesAtLocal && <span className="muted"> · {t('surveys.closesAt')}: {formatLocalDateTime(s.closesAtLocal)}</span>}
+                </p>
+                <Link to={`/student/surveys/${s.id}`} className={s.canRespond ? 'btn btn-primary' : 'btn'}>
+                  {s.canRespond ? t('studentSurveys.answer') : t('studentSurveys.view')}
+                </Link>
+              </div>
             </article>
           ))}
         </div>
@@ -220,6 +228,7 @@ export function NotificationsPage() {
   const hasUnread = list.data?.some((n) => !n.readAt)
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('notifications.title')}
         actions={hasUnread && (

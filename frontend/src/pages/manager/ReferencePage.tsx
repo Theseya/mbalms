@@ -108,6 +108,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={config.title}
         actions={

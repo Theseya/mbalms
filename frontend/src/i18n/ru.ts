@@ -333,6 +333,12 @@ const ru = {
     scaleHint: 'от {{min}} до {{max}}',
     noSurveys: 'Назначенных опросов нет',
     closedNote: 'Опрос закрыт.',
+    mascot: {
+      notCompleted: 'Опрос не пройден',
+      completed: 'Опрос пройден',
+      closed: 'Опрос закрыт',
+      unavailable: 'Опрос недоступен',
+    },
   },
   notifications: {
     title: 'Уведомления',

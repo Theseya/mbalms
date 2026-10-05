@@ -126,6 +126,7 @@ export function StudentsPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('students.title')}
         actions={

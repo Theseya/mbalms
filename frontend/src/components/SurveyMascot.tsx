@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { StudentSurveyListItem } from '../api/types'
-import { mascotState, type MascotMood } from '../lib/mascot'
+import { mascotState, surveyCardCaptionKey, surveyCardMood, type MascotMood } from '../lib/mascot'
 
 const INK = '#1d2330'
 const FEATHER = '#2c3a52'
@@ -14,7 +14,7 @@ const GOLD = '#d9962b'
 function Eyes({ mood }: { mood: MascotMood }) {
   if (mood === 'done')
     return (
-      <g fill="none" stroke={LIGHT} strokeWidth="3.5" strokeLinecap="round">
+      <g className="mascot-eyes" fill="none" stroke={LIGHT} strokeWidth="3.5" strokeLinecap="round">
         <path d="M40 61 Q48 52 56 61" />
         <path d="M64 61 Q72 52 80 61" />
       </g>
@@ -22,7 +22,7 @@ function Eyes({ mood }: { mood: MascotMood }) {
   // Pending: looking up and aside, as if thinking about the unanswered survey.
   const [dx, dy] = mood === 'pending' ? [-2.5, -3] : [0, 0]
   return (
-    <g>
+    <g className="mascot-eyes">
       <circle cx="48" cy="60" r="9" fill="#fff" />
       <circle cx="72" cy="60" r="9" fill="#fff" />
       <circle cx={48 + dx} cy={60 + dy} r="4" fill={INK} />
@@ -92,5 +92,17 @@ export function SurveyMascot({ surveys }: { surveys: StudentSurveyListItem[] }) 
         <span className="mascot-action">{action} →</span>
       </span>
     </Link>
+  )
+}
+
+/** Compact crow + caption beside each row on the student surveys list. Decorative SVG; meaning is in the caption. */
+export function SurveyCardMascot({ survey }: { survey: StudentSurveyListItem }) {
+  const { t } = useTranslation()
+  const mood = surveyCardMood(survey)
+  return (
+    <div className={`survey-card-mascot mascot-${mood}`} data-mood={mood}>
+      <CrowIllustration mood={mood} />
+      <span className="mascot-caption">{t(surveyCardCaptionKey(survey))}</span>
+    </div>
   )
 }

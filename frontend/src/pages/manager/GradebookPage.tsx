@@ -26,6 +26,7 @@ export function GradebookPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader title={t('gradebook.title')} actions={<Link className="btn" to="/manager/grades">{t('nav.grades')}</Link>} />
       <p className="muted">{t('gradebook.intro')}</p>
       <ErrorBanner error={groups.error ?? disciplines.error ?? periods.error} />

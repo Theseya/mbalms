@@ -64,6 +64,7 @@ export function SurveyResultsPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={`${t('surveys.results')}: ${s.title}`}
         actions={

@@ -333,6 +333,12 @@ const en: Messages = {
     scaleHint: 'from {{min}} to {{max}}',
     noSurveys: 'No surveys assigned',
     closedNote: 'The survey is closed.',
+    mascot: {
+      notCompleted: 'Survey not completed',
+      completed: 'Survey completed',
+      closed: 'Survey closed',
+      unavailable: 'Survey unavailable',
+    },
   },
   notifications: {
     title: 'Notifications',

@@ -36,6 +36,7 @@ export function SurveysPage() {
 
   return (
     <>
+      <div className="layout-fluid" hidden />
       <PageHeader
         title={t('surveys.title')}
         actions={<Link to="/manager/surveys/new" className="btn btn-primary">{t('surveys.new')}</Link>}
