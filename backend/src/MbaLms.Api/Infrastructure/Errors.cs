@@ -30,6 +30,11 @@ public static class ErrorCodes
     public const string CsrfFailed = "csrf_failed";
     public const string Forbidden = "forbidden";
     public const string ServerError = "server_error";
+    public const string ImportExpired = "import_expired";
+    public const string ImportAlreadyUsed = "import_already_used";
+    public const string ImportEmpty = "import_empty";
+    public const string ImportInvalidFile = "import_invalid_file";
+    public const string ImportPasswordColumn = "import_password_column";
 }
 
 /// <summary>Field-level validation error codes (used as values in the "errors" dictionary).</summary>
@@ -44,6 +49,8 @@ public static class FieldCodes
     public const string NotSameDay = "not_same_day";
     public const string NotFound = "not_found";
     public const string PasswordWeak = "password_weak";
+    public const string FormulaNotAllowed = "formula_not_allowed";
+    public const string Ambiguous = "ambiguous";
 
     public static readonly IReadOnlySet<string> All = typeof(FieldCodes)
         .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)

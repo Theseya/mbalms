@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../../api/client'
 import type { Discipline, Period, Teacher } from '../../api/types'
+import { ImportDialog, type ImportPreviewColumn } from '../../components/ImportDialog'
 import {
   Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField,
 } from '../../components/ui'
@@ -32,6 +33,9 @@ interface ReferenceConfig<T> {
   editLabel: string
   endpoint: string
   exportUrl?: string
+  /** When set, shows Import next to Export (Excel import vertical for this entity). */
+  importPath?: string
+  importPreviewColumns?: ImportPreviewColumn[]
   fields: FieldDef[]
   columns: ColumnDef<T>[]
   /** Shown in the delete confirmation. */
@@ -46,6 +50,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
   const { t } = useTranslation()
   const list = useLoad(() => api.get<T[]>(config.endpoint), config.endpoint)
   const [editing, setEditing] = useState<{ id: string | null; values: Values } | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
@@ -108,6 +113,9 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
         actions={
           <>
             {config.exportUrl && <ExportButton url={config.exportUrl} />}
+            {config.importPath && (
+              <button type="button" className="btn" onClick={() => setImportOpen(true)}>{t('import.open')}</button>
+            )}
             <button type="button" className="btn btn-primary" onClick={() => open()}>{config.newLabel}</button>
           </>
         }
@@ -167,6 +175,14 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
         </Modal>
       )}
       {dialog}
+      {importOpen && config.importPath && config.importPreviewColumns && (
+        <ImportDialog
+          entityPath={config.importPath}
+          previewColumns={config.importPreviewColumns}
+          onClose={() => setImportOpen(false)}
+          onImported={() => list.reload()}
+        />
+      )}
     </>
   )
 }
@@ -181,6 +197,13 @@ export function TeachersPage() {
         editLabel: t('teachers.editTitle'),
         endpoint: '/api/manager/teachers',
         exportUrl: '/api/manager/exports/teachers',
+        importPath: '/api/manager/imports/teachers',
+        importPreviewColumns: [
+          { key: 'lastName', labelKey: 'common.lastName' },
+          { key: 'firstName', labelKey: 'common.firstName' },
+          { key: 'middleName', labelKey: 'common.middleName' },
+          { key: 'email', labelKey: 'common.email' },
+        ],
         fields: [
           { name: 'lastName', label: t('common.lastName'), kind: 'text', required: true, maxLength: 100 },
           { name: 'firstName', label: t('common.firstName'), kind: 'text', required: true, maxLength: 100 },
@@ -209,6 +232,11 @@ export function DisciplinesPage() {
         editLabel: t('disciplines.editTitle'),
         endpoint: '/api/manager/disciplines',
         exportUrl: '/api/manager/exports/disciplines',
+        importPath: '/api/manager/imports/disciplines',
+        importPreviewColumns: [
+          { key: 'name', labelKey: 'common.name' },
+          { key: 'description', labelKey: 'common.description' },
+        ],
         fields: [
           { name: 'name', label: t('common.name'), kind: 'text', required: true, maxLength: 200 },
           { name: 'description', label: t('common.description'), kind: 'textarea', maxLength: 2000 },

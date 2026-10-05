@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Group, PagedResult, Student } from '../../api/types'
+import { ImportDialog } from '../../components/ImportDialog'
 import {
   Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField, Select,
 } from '../../components/ui'
@@ -22,6 +23,14 @@ interface Form {
   password: string
 }
 
+const studentImportColumns = [
+  { key: 'lastName', labelKey: 'common.lastName' },
+  { key: 'firstName', labelKey: 'common.firstName' },
+  { key: 'middleName', labelKey: 'common.middleName' },
+  { key: 'email', labelKey: 'common.email' },
+  { key: 'group', labelKey: 'common.group' },
+]
+
 export function StudentsPage() {
   const { t } = useTranslation()
   const [params, setParams] = useSearchParams()
@@ -35,6 +44,7 @@ export function StudentsPage() {
   const listQuery = query({ groupId, includeArchived: includeArchived || undefined, search: debouncedSearch, page, pageSize: PAGE_SIZE })
   const list = useLoad(() => api.get<PagedResult<Student>>(`/api/manager/students${listQuery}`), listQuery)
   const [form, setForm] = useState<Form | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
@@ -121,6 +131,7 @@ export function StudentsPage() {
         actions={
           <>
             <ExportButton url={`/api/manager/exports/students${filterQuery}`} />
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>{t('import.open')}</button>
             <button type="button" className="btn btn-primary" onClick={() => open()}>{t('students.new')}</button>
           </>
         }
@@ -212,6 +223,15 @@ export function StudentsPage() {
             <FormActions saving={saving} onCancel={() => setForm(null)} />
           </form>
         </Modal>
+      )}
+      {importOpen && (
+        <ImportDialog
+          entityPath="/api/manager/imports/students"
+          previewColumns={studentImportColumns}
+          requirePasswordsForCreates
+          onClose={() => setImportOpen(false)}
+          onImported={() => list.reload()}
+        />
       )}
       {dialog}
     </>

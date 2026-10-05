@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.RegularExpressions;
+using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Controllers;
 using MbaLms.Api.Controllers.Manager;
 using MbaLms.Api.Tests.Infrastructure;
@@ -40,7 +42,19 @@ public partial class AuthorizationTests(ApiFactory factory) : TestBase(factory)
     private static Task<HttpResponseMessage> SendAsync(ApiClient client, Endpoint endpoint)
     {
         var request = new HttpRequestMessage(new HttpMethod(endpoint.Method), endpoint.Url);
-        if (endpoint.Method is "POST" or "PUT") request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        if (endpoint.Method is "POST" or "PUT")
+        {
+            if (endpoint.Pattern.Contains("imports/", StringComparison.Ordinal) && endpoint.Pattern.EndsWith("/preview", StringComparison.Ordinal))
+            {
+                var file = new ByteArrayContent([]);
+                file.Headers.ContentType = new MediaTypeHeaderValue(ExcelExporter.ContentType);
+                var form = new MultipartFormDataContent();
+                form.Add(file, "file", "probe.xlsx");
+                request.Content = form;
+            }
+            else
+                request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        }
         return client.Http.SendAsync(request);
     }
 

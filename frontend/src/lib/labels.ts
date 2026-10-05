@@ -28,6 +28,11 @@ export function notificationText(n: AppNotification, t: T): string {
     case 'SurveyAssigned':
       return t('notifications.SurveyAssigned', { title: p.title })
     case 'ScheduleChanged':
+      if (p.change === 'import')
+        return t('notifications.ScheduleChanged_import', {
+          created: String(p.created ?? 0),
+          updated: String(p.updated ?? 0),
+        })
       return t(`notifications.ScheduleChanged_${p.change}`, { discipline: p.disciplineName, date: formatLocalDateTime(p.startsAtLocal) })
     case 'GradePublished':
       return t(p.change === 'updated' ? 'notifications.GradePublished_updated' : 'notifications.GradePublished', {

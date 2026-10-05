@@ -128,6 +128,7 @@ describe('localization resources', () => {
       expect(lessonsCs).toContain(`"${change}"`)
       expect(typeof lookup(ru, `notifications.ScheduleChanged_${change}`)).toBe('string')
     }
+    expect(typeof lookup(ru, 'notifications.ScheduleChanged_import')).toBe('string')
     expect(gradesCs).toContain('Notify(grade, "published")')
     expect(gradesCs).toContain('Notify(grade, "updated")')
     for (const key of ['SurveyAssigned', 'GradePublished', 'GradePublished_updated'])

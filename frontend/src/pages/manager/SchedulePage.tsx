@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api, query } from '../../api/client'
 import type { Discipline, Group, Lesson, LessonFormat, LessonOverlap, LessonStatus, Teacher } from '../../api/types'
+import { ImportDialog } from '../../components/ImportDialog'
 import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select } from '../../components/ui'
 import { formatLocalDate, formatLocalDateTime, formatLocalTime, getAppTimeZone } from '../../lib/format'
 import { groupLabel } from '../../lib/labels'
@@ -47,6 +48,7 @@ export function SchedulePage() {
   const q = query({ groupId, from, to })
   const list = useLoad(() => api.get<Lesson[]>(`/api/manager/lessons${q}`), q)
   const [form, setForm] = useState<Form | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
@@ -129,6 +131,7 @@ export function SchedulePage() {
         actions={
           <>
             <ExportButton url={`/api/manager/exports/schedule${q}`} />
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>{t('import.open')}</button>
             <button type="button" className="btn btn-primary" onClick={() => open()}>{t('schedule.new')}</button>
           </>
         }
@@ -264,6 +267,25 @@ export function SchedulePage() {
             <FormActions saving={saving} onCancel={() => setForm(null)} />
           </form>
         </Modal>
+      )}
+      {importOpen && (
+        <ImportDialog
+          entityPath="/api/manager/imports/lessons"
+          previewColumns={[
+            { key: 'lessonId', labelKey: 'import.colLessonId' },
+            { key: 'date', labelKey: 'schedule.date' },
+            { key: 'start', labelKey: 'schedule.startsAt' },
+            { key: 'end', labelKey: 'schedule.endsAt' },
+            { key: 'group', labelKey: 'common.group' },
+            { key: 'discipline', labelKey: 'common.discipline' },
+            { key: 'teacher', labelKey: 'common.teacher' },
+            { key: 'format', labelKey: 'schedule.format' },
+            { key: 'location', labelKey: 'schedule.location' },
+            { key: 'status', labelKey: 'schedule.status' },
+          ]}
+          onClose={() => setImportOpen(false)}
+          onImported={() => list.reload()}
+        />
       )}
       {dialog}
     </>

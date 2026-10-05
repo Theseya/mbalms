@@ -122,6 +122,31 @@ export const api = {
     a.remove()
     URL.revokeObjectURL(href)
   },
+  /** Multipart upload (e.g. Excel import preview). Do not set Content-Type — the browser adds the boundary. */
+  upload: async <T>(url: string, form: FormData): Promise<T> => {
+    if (!csrfToken) await refreshCsrf()
+    const send = () => {
+      const headers: Record<string, string> = { Accept: 'application/json' }
+      if (csrfToken) headers['X-XSRF-TOKEN'] = csrfToken
+      return fetch(url, { method: 'POST', headers, credentials: 'same-origin', body: form })
+    }
+    let res: Response
+    try {
+      res = await send()
+    } catch {
+      throw new ApiError(0, 'network_error')
+    }
+    if (res.status === 400) {
+      const error = await toError(res.clone())
+      if (error.code === 'csrf_failed') {
+        await refreshCsrf()
+        res = await send()
+      }
+    }
+    if (res.status === 401 && onUnauthorized) onUnauthorized()
+    if (!res.ok) throw await toError(res)
+    return json<T>(res)
+  },
 }
 
 export function query(params: Record<string, string | number | boolean | null | undefined>): string {

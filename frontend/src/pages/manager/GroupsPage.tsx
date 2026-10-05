@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Group, Program } from '../../api/types'
+import { ImportDialog } from '../../components/ImportDialog'
 import {
   Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Pagination, SearchField,
 } from '../../components/ui'
@@ -15,6 +16,12 @@ import { toApiError, useLoad } from '../../lib/useLoad'
 type Filter = 'Active' | 'Archived' | 'All'
 interface Form { id: string | null; name: string; startDate: string; endDate: string }
 
+const groupImportColumns = [
+  { key: 'name', labelKey: 'common.name' },
+  { key: 'startDate', labelKey: 'common.startDate' },
+  { key: 'endDate', labelKey: 'common.endDate' },
+]
+
 export function GroupsPage() {
   const { t } = useTranslation()
   const [filter, setFilter] = useState<Filter>('Active')
@@ -22,6 +29,7 @@ export function GroupsPage() {
   const [page, setPage] = useState(1)
   const list = useLoad(() => api.get<Group[]>(`/api/manager/groups${query({ status: filter })}`), filter)
   const [form, setForm] = useState<Form | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
@@ -90,6 +98,7 @@ export function GroupsPage() {
         actions={
           <>
             <ExportButton url={`/api/manager/exports/groups${query({ status: filter })}`} />
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>{t('import.open')}</button>
             <button type="button" className="btn btn-primary" onClick={() => open()}>{t('groups.new')}</button>
           </>
         }
@@ -177,6 +186,14 @@ export function GroupsPage() {
             <FormActions saving={saving} onCancel={() => setForm(null)} />
           </form>
         </Modal>
+      )}
+      {importOpen && (
+        <ImportDialog
+          entityPath="/api/manager/imports/groups"
+          previewColumns={groupImportColumns}
+          onClose={() => setImportOpen(false)}
+          onImported={() => list.reload()}
+        />
       )}
       {dialog}
     </>

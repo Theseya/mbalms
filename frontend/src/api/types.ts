@@ -298,3 +298,45 @@ export interface AppNotification {
   createdAt: Instant
   readAt: Instant | null
 }
+
+export type ImportRowAction = 'Create' | 'Update' | 'Conflict' | 'Error' | 'Skip'
+
+export interface ImportRowError {
+  field: string
+  code: string
+  sheet?: string | null
+  row?: number | null
+  column?: string | null
+}
+
+export interface ImportCellError {
+  sheet: string
+  row: number
+  column: string
+  code: string
+  field?: string | null
+}
+
+export interface ImportPreviewRow {
+  rowNumber: number
+  action: ImportRowAction
+  values: Record<string, string | null>
+  errors: ImportRowError[]
+  warnings?: { code: string; message?: string | null }[] | null
+}
+
+export interface ImportPreview {
+  importId: string
+  createCount: number
+  updateCount: number
+  conflictCount: number
+  errorCount: number
+  rows: ImportPreviewRow[]
+  fileErrors: ImportCellError[]
+}
+
+export interface ImportConfirmResult {
+  created: number
+  updated: number
+  skipped: number
+}

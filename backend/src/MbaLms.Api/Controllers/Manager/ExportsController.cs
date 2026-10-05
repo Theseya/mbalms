@@ -116,7 +116,8 @@ public class ExportsController(AppDbContext db, AppTime time) : ManagerControlle
         // Date and times are real Excel date/time cells in the application time zone, named in the headers.
         var zone = $" ({time.TimeZoneId})";
         return Xlsx("schedule", t["sheet.schedule"], [
-            new ExcelColumn<Lesson>(t["col.date"], l => DateOnly.FromDateTime(time.ToLocal(l.StartsAt))),
+            new ExcelColumn<Lesson>(t["col.lessonId"], l => l.Id.ToString()),
+            new(t["col.date"], l => DateOnly.FromDateTime(time.ToLocal(l.StartsAt))),
             new(t["col.start"] + zone, l => TimeOnly.FromDateTime(time.ToLocal(l.StartsAt))),
             new(t["col.end"] + zone, l => TimeOnly.FromDateTime(time.ToLocal(l.EndsAt))),
             new(t["col.group"], l => l.Group!.Name),
@@ -188,6 +189,7 @@ public sealed class ExportText
         ["col.grade"] = "Оценка", ["col.publishedAt"] = "Опубликовано", ["col.date"] = "Дата", ["col.start"] = "Начало",
         ["col.end"] = "Окончание", ["col.teacher"] = "Преподаватель", ["col.format"] = "Формат",
         ["col.location"] = "Место / ссылка", ["col.comment"] = "Комментарий", ["col.submittedAt"] = "Отправлено",
+        ["col.lessonId"] = "LessonId",
         ["groupStatus.Active"] = "Активная", ["groupStatus.Archived"] = "В архиве",
         ["gradeStatus.Draft"] = "Черновик", ["gradeStatus.Published"] = "Опубликована",
         ["format.Offline"] = "Очно", ["format.Online"] = "Онлайн", ["format.Hybrid"] = "Гибрид",
@@ -208,6 +210,7 @@ public sealed class ExportText
         ["col.grade"] = "Grade", ["col.publishedAt"] = "Published at", ["col.date"] = "Date", ["col.start"] = "Start",
         ["col.end"] = "End", ["col.teacher"] = "Teacher", ["col.format"] = "Format",
         ["col.location"] = "Location / link", ["col.comment"] = "Comment", ["col.submittedAt"] = "Submitted at",
+        ["col.lessonId"] = "LessonId",
         ["groupStatus.Active"] = "Active", ["groupStatus.Archived"] = "Archived",
         ["gradeStatus.Draft"] = "Draft", ["gradeStatus.Published"] = "Published",
         ["format.Offline"] = "In person", ["format.Online"] = "Online", ["format.Hybrid"] = "Hybrid",

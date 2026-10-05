@@ -126,9 +126,9 @@ public class ScheduleManagementTests(ApiFactory factory) : TestBase(factory)
 
         using var wb = await DownloadAsync(manager, $"/api/manager/exports/schedule?groupId={r.Group.Id}");
         var ws = wb.Worksheet(1);
-        Assert.Equal(new DateTime(2030, 3, 10), ws.Cell(2, 1).GetDateTime());
-        Assert.Equal(new TimeSpan(0, 30, 0), ws.Cell(2, 2).Value.GetTimeSpan());
-        Assert.Equal(new TimeSpan(1, 30, 0), ws.Cell(2, 3).Value.GetTimeSpan());
+        Assert.Equal(new DateTime(2030, 3, 10), ws.Cell(2, 2).GetDateTime());
+        Assert.Equal(new TimeSpan(0, 30, 0), ws.Cell(2, 3).Value.GetTimeSpan());
+        Assert.Equal(new TimeSpan(1, 30, 0), ws.Cell(2, 4).Value.GetTimeSpan());
     }
 
     [Fact]
@@ -286,28 +286,30 @@ public class ScheduleManagementTests(ApiFactory factory) : TestBase(factory)
 
         using var wb = await DownloadAsync(manager, $"/api/manager/exports/schedule?groupId={r.Group.Id}&from=2030-05-02&to=2030-05-09");
         var ws = wb.Worksheet(1);
-        var headers = Enumerable.Range(1, 10).Select(c => ws.Cell(1, c).GetString()).ToArray();
-        Assert.Equal(["Дата", "Начало (Europe/Moscow)", "Окончание (Europe/Moscow)", "Группа", "Дисциплина", "Преподаватель",
+        var headers = Enumerable.Range(1, 11).Select(c => ws.Cell(1, c).GetString()).ToArray();
+        Assert.Equal(["LessonId", "Дата", "Начало (Europe/Moscow)", "Окончание (Europe/Moscow)", "Группа", "Дисциплина", "Преподаватель",
             "Формат", "Место / ссылка", "Комментарий", "Статус занятия"], headers);
 
-        Assert.Equal(XLDataType.DateTime, ws.Cell(2, 1).DataType);
-        Assert.Equal("05.05.2030", ws.Cell(2, 1).GetFormattedString());
-        Assert.Equal(XLDataType.TimeSpan, ws.Cell(2, 2).DataType);
-        Assert.Equal("18:15", ws.Cell(2, 2).GetFormattedString());
-        Assert.Equal("19:45", ws.Cell(2, 3).GetFormattedString());
-        Assert.Equal(r.Group.Name, ws.Cell(2, 4).GetString());
-        Assert.Equal(r.Discipline.Name, ws.Cell(2, 5).GetString());
-        Assert.Equal(r.Teacher.FullName, ws.Cell(2, 6).GetString());
-        Assert.Equal(("Гибрид", "Ауд. 305 «Б»"), (ws.Cell(2, 7).GetString(), ws.Cell(2, 8).GetString()));
-        Assert.Equal("=HYPERLINK(\"http://x\")", ws.Cell(2, 9).GetString());
-        Assert.False(ws.Cell(2, 9).HasFormula);
-        Assert.Equal("Отменено", ws.Cell(2, 10).GetString());
+        Assert.False(string.IsNullOrWhiteSpace(ws.Cell(2, 1).GetString()));
+        Assert.Equal(XLDataType.DateTime, ws.Cell(2, 2).DataType);
+        Assert.Equal("05.05.2030", ws.Cell(2, 2).GetFormattedString());
+        Assert.Equal(XLDataType.TimeSpan, ws.Cell(2, 3).DataType);
+        Assert.Equal("18:15", ws.Cell(2, 3).GetFormattedString());
+        Assert.Equal("19:45", ws.Cell(2, 4).GetFormattedString());
+        Assert.Equal(r.Group.Name, ws.Cell(2, 5).GetString());
+        Assert.Equal(r.Discipline.Name, ws.Cell(2, 6).GetString());
+        Assert.Equal(r.Teacher.FullName, ws.Cell(2, 7).GetString());
+        Assert.Equal(("Гибрид", "Ауд. 305 «Б»"), (ws.Cell(2, 8).GetString(), ws.Cell(2, 9).GetString()));
+        Assert.Equal("=HYPERLINK(\"http://x\")", ws.Cell(2, 10).GetString());
+        Assert.False(ws.Cell(2, 10).HasFormula);
+        Assert.Equal("Отменено", ws.Cell(2, 11).GetString());
         Assert.True(ws.Cell(3, 1).IsEmpty());
 
         using var en = await DownloadAsync(manager, $"/api/manager/exports/schedule?groupId={r.Group.Id}&from=2030-05-01&to=2030-05-01&lang=en");
         var enWs = en.Worksheet(1);
-        Assert.Equal(("Date", "Start (Europe/Moscow)", "Lesson status"), (enWs.Cell(1, 1).GetString(), enWs.Cell(1, 2).GetString(), enWs.Cell(1, 10).GetString()));
-        Assert.Equal(("Hybrid", "Scheduled"), (enWs.Cell(2, 7).GetString(), enWs.Cell(2, 10).GetString()));
+        Assert.Equal(("LessonId", "Date", "Start (Europe/Moscow)", "Lesson status"),
+            (enWs.Cell(1, 1).GetString(), enWs.Cell(1, 2).GetString(), enWs.Cell(1, 3).GetString(), enWs.Cell(1, 11).GetString()));
+        Assert.Equal(("Hybrid", "Scheduled"), (enWs.Cell(2, 8).GetString(), enWs.Cell(2, 11).GetString()));
     }
 
     private static async Task<XLWorkbook> DownloadAsync(ApiClient client, string url)

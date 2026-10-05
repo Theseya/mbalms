@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Discipline, Grade, GradeHistoryEntry, GradeStatus, Group, Period, Student } from '../../api/types'
+import { ImportDialog } from '../../components/ImportDialog'
 import { Badge, Empty, ErrorBanner, ExportButton, Field, FormActions, Loading, Modal, PageHeader, Select, type ConfirmOptions } from '../../components/ui'
 import { formatInstant } from '../../lib/format'
 import { parseGrade } from '../../lib/grades'
@@ -34,6 +35,7 @@ export function GradesPage() {
   const list = useLoad(() => api.get<Grade[]>(`/api/manager/grades${q}`), q)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [form, setForm] = useState<Form | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [historyFor, setHistoryFor] = useState<Grade | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -124,6 +126,7 @@ export function GradesPage() {
           <>
             <Link className="btn" to="/manager/gradebook">{t('nav.gradebook')}</Link>
             <ExportButton url={`/api/manager/exports/grades${q}`} />
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>{t('import.open')}</button>
             {selected.size > 0 && (
               <button type="button" className="btn"
                 onClick={() => act(() => api.post('/api/manager/grades/publish', { ids: [...selected] }))}>
@@ -260,6 +263,19 @@ export function GradesPage() {
       )}
 
       {historyFor && <GradeHistoryModal grade={historyFor} onClose={() => setHistoryFor(null)} />}
+      {importOpen && (
+        <ImportDialog
+          entityPath="/api/manager/imports/grades"
+          previewColumns={[
+            { key: 'email', labelKey: 'common.email' },
+            { key: 'discipline', labelKey: 'common.discipline' },
+            { key: 'period', labelKey: 'common.period' },
+            { key: 'value', labelKey: 'grades.value' },
+          ]}
+          onClose={() => setImportOpen(false)}
+          onImported={() => list.reload()}
+        />
+      )}
       {dialog}
     </>
   )

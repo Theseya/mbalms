@@ -25,6 +25,7 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.75rem; }
 h3 { font-size: 1rem; margin: 0.25rem 0; }
 a { color: var(--primary); }
 .muted { color: var(--muted); }
+.stack { display: flex; flex-direction: column; gap: 12px; }
 .block { display: block; }
 .pre { white-space: pre-wrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

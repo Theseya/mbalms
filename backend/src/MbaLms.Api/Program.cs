@@ -18,6 +18,7 @@ builder.Services.Configure<AppOptions>(config.GetSection(AppOptions.Section));
 builder.Services.Configure<SeedOptions>(config.GetSection(SeedOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AppTime>();
+builder.Services.AddSingleton<MbaLms.Api.Infrastructure.Import.ImportSessionStore>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<NotificationService>();

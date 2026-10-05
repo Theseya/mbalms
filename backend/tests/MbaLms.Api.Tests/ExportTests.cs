@@ -68,10 +68,10 @@ public class ExportTests(ApiFactory factory) : TestBase(factory)
 
         using var wb = await DownloadAsync(manager, $"/api/manager/exports/schedule?groupId={group.Id}");
         var ws = wb.Worksheet(1);
-        Assert.Equal(new DateTime(2030, 4, 1), ws.Cell(2, 1).GetDateTime());
-        Assert.Equal(new TimeSpan(9, 30, 0), ws.Cell(2, 2).Value.GetTimeSpan());
-        Assert.Equal("09:30", ws.Cell(2, 2).GetFormattedString());
-        Assert.Equal("11:00", ws.Cell(2, 3).GetFormattedString());
+        Assert.Equal(new DateTime(2030, 4, 1), ws.Cell(2, 2).GetDateTime());
+        Assert.Equal(new TimeSpan(9, 30, 0), ws.Cell(2, 3).Value.GetTimeSpan());
+        Assert.Equal("09:30", ws.Cell(2, 3).GetFormattedString());
+        Assert.Equal("11:00", ws.Cell(2, 4).GetFormattedString());
     }
 
     [Fact]
