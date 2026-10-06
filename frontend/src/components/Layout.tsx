@@ -34,6 +34,7 @@ const managerLinks = [
   ['/manager/gradebook', 'nav.gradebook'],
   ['/manager/grades', 'nav.grades'],
   ['/manager/surveys', 'nav.surveys'],
+  ['/manager/survey-templates', 'nav.surveyTemplates'],
 ] as const
 
 const studentLinks = [

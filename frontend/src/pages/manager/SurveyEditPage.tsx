@@ -170,6 +170,22 @@ export function SurveyEditPage() {
         actions={
           <>
             <Link to="/manager/surveys" className="btn">{t('common.back')}</Link>
+            {s && s.questions.length > 0 && (
+              <button type="button" className="btn" onClick={async () => {
+                if (!(await confirm({
+                  title: t('surveyTemplates.saveAsTitle'),
+                  message: t('surveyTemplates.saveAsConfirm', { title: s.title }),
+                  confirmLabel: t('surveyTemplates.saveAs'),
+                }))) return
+                setError(null)
+                try {
+                  const tpl = await api.post<{ id: string }>(`/api/manager/surveys/${s.id}/save-as-template`)
+                  navigate(`/manager/survey-templates/${tpl.id}`)
+                } catch (err) {
+                  setError(toApiError(err))
+                }
+              }}>{t('surveyTemplates.saveAs')}</button>
+            )}
             {s && s.status !== 'Open' && s.groupStatus === 'Active' && s.questions.length > 0 && (
               <button type="button" className="btn btn-primary" onClick={() => changeStatus('open')}>
                 {s.status === 'Draft' ? t('surveys.open') : t('surveys.reopen')}

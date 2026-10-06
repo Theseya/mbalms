@@ -55,8 +55,8 @@ public record SurveyAssignedPayload(Guid SurveyId, string Title, SurveyType Surv
 [Route("api/manager/surveys")]
 public class SurveysController(AppDbContext db, AppTime time, NotificationService notifications) : ManagerControllerBase(db)
 {
-    public const int ScaleLimit = 100;
-    public const int MaxOptions = 20;
+    public const int ScaleLimit = SurveyQuestionBuilder.ScaleLimit;
+    public const int MaxOptions = SurveyQuestionBuilder.MaxOptions;
 
     [HttpGet]
     public async Task<List<SurveyListItemDto>> List([FromQuery] Guid? groupId, [FromQuery] SurveyType? type,
@@ -105,6 +105,69 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
         Db.Surveys.Add(survey);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = survey.Id }, await Get(survey.Id, ct));
+    }
+
+    /// <summary>
+    /// Creates a Draft survey by copying a template's type/title/description/questions (new IDs).
+    /// Launch fields (group, teacher/discipline, window) come from the request — never from the template.
+    /// </summary>
+    [HttpPost("from-template")]
+    public async Task<ActionResult<SurveyDetailDto>> CreateFromTemplate(CreateSurveyFromTemplateRequest r, CancellationToken ct)
+    {
+        var template = await Db.SurveyTemplates.AsNoTracking().AsSplitQuery()
+                           .Include(t => t.Questions).ThenInclude(q => q.Options)
+                           .FirstOrDefaultAsync(t => t.Id == r.TemplateId, ct)
+                       ?? throw AppException.NotFound();
+
+        var questions = template.Questions.OrderBy(q => q.Order)
+            .Select(SurveyQuestionBuilder.ToRequest).ToList();
+        var request = new SurveyRequest(
+            template.Type,
+            string.IsNullOrWhiteSpace(r.Title) ? template.Title : r.Title.Trim(),
+            r.Description is null ? template.Description : Clean(r.Description),
+            r.GroupId,
+            r.TeacherId,
+            r.DisciplineId,
+            r.OpensAt,
+            r.ClosesAt,
+            questions);
+
+        var survey = new Survey { Id = Guid.CreateVersion7(), Title = request.Title, CreatedAt = time.UtcNow };
+        await ApplyAsync(survey, request, ct);
+        Db.Surveys.Add(survey);
+        await Db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(Get), new { id = survey.Id }, await Get(survey.Id, ct));
+    }
+
+    /// <summary>
+    /// Copies type, title, description, and question structure into a new template.
+    /// Does not read or copy responses; does not change the source survey.
+    /// </summary>
+    [HttpPost("{id:guid}/save-as-template")]
+    public async Task<ActionResult<SurveyTemplateDetailDto>> SaveAsTemplate(Guid id, CancellationToken ct)
+    {
+        var survey = await Db.Surveys.AsNoTracking().AsSplitQuery()
+                         .Include(s => s.Questions).ThenInclude(q => q.Options)
+                         .FirstOrDefaultAsync(s => s.Id == id, ct)
+                     ?? throw AppException.NotFound();
+
+        var now = time.UtcNow;
+        var template = new SurveyTemplate
+        {
+            Id = Guid.CreateVersion7(),
+            Type = survey.Type,
+            Title = survey.Title,
+            Description = survey.Description,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Questions = survey.Questions.OrderBy(q => q.Order)
+                .Select((q, i) => SurveyQuestionBuilder.BuildTemplateQuestion(SurveyQuestionBuilder.ToRequest(q), i, $"questions[{i}]"))
+                .ToList()
+        };
+        Db.SurveyTemplates.Add(template);
+        await Db.SaveChangesAsync(ct);
+        return CreatedAtAction(nameof(SurveyTemplatesController.Get), "SurveyTemplates", new { id = template.Id },
+            await SurveyTemplatesController.LoadDetail(Db, template.Id, ct));
     }
 
     /// <summary>Full edit (including questions) is allowed only while the survey is a draft.</summary>
@@ -228,49 +291,18 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
 
         var questions = r.Questions ?? [];
         for (var i = 0; i < questions.Count; i++)
-        {
-            survey.Questions.Add(BuildQuestion(questions[i], i, $"questions[{i}]"));
-        }
-    }
-
-    private static SurveyQuestion BuildQuestion(SurveyQuestionRequest q, int order, string path)
-    {
-        if (string.IsNullOrWhiteSpace(q.Text)) throw AppException.Validation($"{path}.text", FieldCodes.Required);
-        var question = new SurveyQuestion
-        {
-            Id = Guid.CreateVersion7(),
-            Order = order,
-            Text = q.Text.Trim(),
-            Type = q.Type!.Value,
-            IsRequired = q.IsRequired
-        };
-
-        switch (question.Type)
-        {
-            case QuestionType.Scale:
-                if (q.ScaleMin is null) throw AppException.Validation($"{path}.scaleMin", FieldCodes.Required);
-                if (q.ScaleMax is null) throw AppException.Validation($"{path}.scaleMax", FieldCodes.Required);
-                if (q.ScaleMin < -ScaleLimit || q.ScaleMax > ScaleLimit || q.ScaleMin >= q.ScaleMax)
-                    throw AppException.Validation($"{path}.scaleMax", FieldCodes.Range);
-                question.ScaleMin = q.ScaleMin;
-                question.ScaleMax = q.ScaleMax;
-                question.ScaleMinLabel = Clean(q.ScaleMinLabel);
-                question.ScaleMaxLabel = Clean(q.ScaleMaxLabel);
-                break;
-            case QuestionType.SingleChoice:
-                var options = (q.Options ?? []).Select(o => o?.Trim()).Where(o => !string.IsNullOrEmpty(o)).ToList();
-                if (options.Count < 2 || options.Count > MaxOptions)
-                    throw AppException.Validation($"{path}.options", FieldCodes.Range);
-                if (options.Any(o => o!.Length > 500))
-                    throw AppException.Validation($"{path}.options", FieldCodes.MaxLength);
-                question.Options = options.Select((o, i) => new SurveyQuestionOption
-                {
-                    Id = Guid.CreateVersion7(), Order = i, Text = o!
-                }).ToList();
-                break;
-            case QuestionType.Text:
-                break;
-        }
-        return question;
+            survey.Questions.Add(SurveyQuestionBuilder.BuildSurveyQuestion(questions[i], i, $"questions[{i}]"));
     }
 }
+
+/// <param name="Title">Optional override; defaults to the template title.</param>
+/// <param name="Description">Optional override; null keeps the template description; empty string clears it.</param>
+public record CreateSurveyFromTemplateRequest(
+    [Required(ErrorMessage = FieldCodes.Required)] Guid TemplateId,
+    [Required(ErrorMessage = FieldCodes.Required)] Guid? GroupId,
+    Guid? TeacherId,
+    Guid? DisciplineId,
+    DateTime? OpensAt,
+    DateTime? ClosesAt,
+    [MaxLength(300, ErrorMessage = FieldCodes.MaxLength)] string? Title = null,
+    [MaxLength(4000, ErrorMessage = FieldCodes.MaxLength)] string? Description = null);

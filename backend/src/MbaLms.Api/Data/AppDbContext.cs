@@ -22,6 +22,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SurveyQuestionOption> SurveyQuestionOptions => Set<SurveyQuestionOption>();
     public DbSet<SurveyResponse> SurveyResponses => Set<SurveyResponse>();
     public DbSet<SurveyAnswer> SurveyAnswers => Set<SurveyAnswer>();
+    public DbSet<SurveyTemplate> SurveyTemplates => Set<SurveyTemplate>();
+    public DbSet<SurveyTemplateQuestion> SurveyTemplateQuestions => Set<SurveyTemplateQuestion>();
+    public DbSet<SurveyTemplateOption> SurveyTemplateOptions => Set<SurveyTemplateOption>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
@@ -145,6 +148,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         });
 
         b.Entity<SurveyQuestionOption>(e =>
+        {
+            e.Property(x => x.Text).HasMaxLength(500);
+        });
+
+        b.Entity<SurveyTemplate>(e =>
+        {
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.Description).HasMaxLength(4000);
+            e.HasIndex(x => x.CreatedAt);
+            e.HasMany(x => x.Questions).WithOne(q => q.Template).HasForeignKey(q => q.TemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<SurveyTemplateQuestion>(e =>
+        {
+            e.Property(x => x.Text).HasMaxLength(1000);
+            e.Property(x => x.ScaleMinLabel).HasMaxLength(100);
+            e.Property(x => x.ScaleMaxLabel).HasMaxLength(100);
+            e.HasMany(x => x.Options).WithOne(o => o.Question).HasForeignKey(o => o.QuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.ToTable(t => t.HasCheckConstraint("CK_SurveyTemplateQuestions_ScaleRange",
+                "\"ScaleMin\" IS NULL OR \"ScaleMax\" IS NULL OR \"ScaleMin\" < \"ScaleMax\""));
+        });
+
+        b.Entity<SurveyTemplateOption>(e =>
         {
             e.Property(x => x.Text).HasMaxLength(500);
         });

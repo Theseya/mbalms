@@ -147,6 +147,43 @@ public class Survey
     public List<SurveyResponse> Responses { get; set; } = [];
 }
 
+/// <summary>Reusable survey structure (no group, window, or responses). Independent of launch surveys.</summary>
+public class SurveyTemplate
+{
+    public Guid Id { get; set; }
+    public SurveyType Type { get; set; }
+    public required string Title { get; set; }
+    public string? Description { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public List<SurveyTemplateQuestion> Questions { get; set; } = [];
+}
+
+public class SurveyTemplateQuestion
+{
+    public Guid Id { get; set; }
+    public Guid TemplateId { get; set; }
+    public SurveyTemplate? Template { get; set; }
+    public int Order { get; set; }
+    public required string Text { get; set; }
+    public QuestionType Type { get; set; }
+    public bool IsRequired { get; set; }
+    public int? ScaleMin { get; set; }
+    public int? ScaleMax { get; set; }
+    public string? ScaleMinLabel { get; set; }
+    public string? ScaleMaxLabel { get; set; }
+    public List<SurveyTemplateOption> Options { get; set; } = [];
+}
+
+public class SurveyTemplateOption
+{
+    public Guid Id { get; set; }
+    public Guid QuestionId { get; set; }
+    public SurveyTemplateQuestion? Question { get; set; }
+    public int Order { get; set; }
+    public required string Text { get; set; }
+}
+
 public class SurveyQuestion
 {
     public Guid Id { get; set; }

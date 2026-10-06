@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Group, SurveyListItem, SurveyStatus, SurveyType } from '../../api/types'
 import { Badge, Empty, ErrorBanner, ExportButton, Field, Loading, PageHeader, Select, type ConfirmOptions } from '../../components/ui'
@@ -14,6 +14,7 @@ const STATUSES: SurveyStatus[] = ['Draft', 'Open', 'Closed']
 
 export function SurveysPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [groupId, setGroupId] = useState('')
   const [type, setType] = useState('')
   const [status, setStatus] = useState('')
@@ -39,7 +40,13 @@ export function SurveysPage() {
       <div className="layout-fluid" hidden />
       <PageHeader
         title={t('surveys.title')}
-        actions={<Link to="/manager/surveys/new" className="btn btn-primary">{t('surveys.new')}</Link>}
+        actions={
+          <>
+            <Link to="/manager/survey-templates" className="btn">{t('surveyTemplates.title')}</Link>
+            <Link to="/manager/surveys/from-template" className="btn">{t('surveyTemplates.createSurvey')}</Link>
+            <Link to="/manager/surveys/new" className="btn btn-primary">{t('surveys.new')}</Link>
+          </>
+        }
       />
       <div className="filters">
         <Field label={t('common.filterGroup')}>
@@ -90,6 +97,19 @@ export function SurveysPage() {
                   <td data-label={t('surveys.responses')}>{t('surveys.responsesOf', { count: s.responseCount, total: s.studentCount })}</td>
                   <td data-label={t('common.status')}><Badge tone={statusTone(s.status)}>{t(`surveyStatus.${s.status}`)}</Badge></td>
                   <td className="actions-col">
+                    {s.questionCount > 0 && (
+                      <button type="button" className="btn btn-small"
+                        onClick={() => act(async () => {
+                          const tpl = await api.post<{ id: string }>(`/api/manager/surveys/${s.id}/save-as-template`)
+                          navigate(`/manager/survey-templates/${tpl.id}`)
+                        }, {
+                          title: t('surveyTemplates.saveAsTitle'),
+                          message: t('surveyTemplates.saveAsConfirm', { title: s.title }),
+                          confirmLabel: t('surveyTemplates.saveAs'),
+                        })}>
+                        {t('surveyTemplates.saveAs')}
+                      </button>
+                    )}
                     {s.status !== 'Open' && s.groupStatus === 'Active' && s.questionCount > 0 && (
                       <button type="button" className="btn btn-small btn-primary"
                         onClick={() => act(() => api.post(`/api/manager/surveys/${s.id}/open`), statusConfirm(t, 'open', s.status))}>

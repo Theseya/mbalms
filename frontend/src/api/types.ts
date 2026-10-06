@@ -217,6 +217,25 @@ export interface SurveyDetail {
   questions: SurveyQuestion[]
 }
 
+export interface SurveyTemplateListItem {
+  id: string
+  type: SurveyType
+  title: string
+  questionCount: number
+  createdAt: Instant
+  updatedAt: Instant
+}
+
+export interface SurveyTemplateDetail {
+  id: string
+  type: SurveyType
+  title: string
+  description: string | null
+  createdAt: Instant
+  updatedAt: Instant
+  questions: SurveyQuestion[]
+}
+
 export interface ResponseAnswer {
   questionId: string
   intValue: number | null

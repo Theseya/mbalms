@@ -13,7 +13,10 @@ import { DisciplinesPage, PeriodsPage, TeachersPage } from './pages/manager/Refe
 import { SchedulePage } from './pages/manager/SchedulePage'
 import { StudentsPage } from './pages/manager/StudentsPage'
 import { SurveyEditPage } from './pages/manager/SurveyEditPage'
+import { SurveyFromTemplatePage } from './pages/manager/SurveyFromTemplatePage'
 import { SurveyResultsPage } from './pages/manager/SurveyResultsPage'
+import { SurveyTemplateEditPage } from './pages/manager/SurveyTemplateEditPage'
+import { SurveyTemplatesPage } from './pages/manager/SurveyTemplatesPage'
 import { SurveysPage } from './pages/manager/SurveysPage'
 import {
   NotificationsPage, StudentGradesPage, StudentHomePage, StudentSchedulePage, StudentSurveysPage,
@@ -53,8 +56,12 @@ export default function App() {
         <Route path="/manager/gradebook" element={<RequireRole role="Manager"><GradebookPage /></RequireRole>} />
         <Route path="/manager/surveys" element={<RequireRole role="Manager"><SurveysPage /></RequireRole>} />
         <Route path="/manager/surveys/new" element={<RequireRole role="Manager"><SurveyEditPage /></RequireRole>} />
+        <Route path="/manager/surveys/from-template" element={<RequireRole role="Manager"><SurveyFromTemplatePage /></RequireRole>} />
         <Route path="/manager/surveys/:id" element={<RequireRole role="Manager"><SurveyEditPage /></RequireRole>} />
         <Route path="/manager/surveys/:id/results" element={<RequireRole role="Manager"><SurveyResultsPage /></RequireRole>} />
+        <Route path="/manager/survey-templates" element={<RequireRole role="Manager"><SurveyTemplatesPage /></RequireRole>} />
+        <Route path="/manager/survey-templates/new" element={<RequireRole role="Manager"><SurveyTemplateEditPage /></RequireRole>} />
+        <Route path="/manager/survey-templates/:id" element={<RequireRole role="Manager"><SurveyTemplateEditPage /></RequireRole>} />
         <Route path="/student" element={<RequireRole role="Student"><StudentHomePage /></RequireRole>} />
         <Route path="/student/schedule" element={<RequireRole role="Student"><StudentSchedulePage /></RequireRole>} />
         <Route path="/student/grades" element={<RequireRole role="Student"><StudentGradesPage /></RequireRole>} />

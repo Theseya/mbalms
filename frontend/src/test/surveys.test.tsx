@@ -157,6 +157,69 @@ describe('SurveysPage', () => {
   })
 })
 
+describe('SurveyTemplates', () => {
+  const listItem = (overrides: Partial<SurveyListItem> = {}): SurveyListItem => ({
+    id: 's1', type: 'ServiceSurvey', title: 'Столовая', status: 'Open', groupId: 'g1', groupName: 'MBA-01', groupStatus: 'Active',
+    teacherName: null, disciplineName: null, opensAtLocal: null, closesAtLocal: null, questionCount: 3, responseCount: 1,
+    studentCount: 2, createdAt: '2026-10-01T09:00:00Z', ...overrides,
+  })
+  const templateDetail = {
+    id: 'tpl1', type: 'TeachingEvaluation' as const, title: 'Шаблон курса', description: 'Desc',
+    createdAt: '2026-10-01T09:00:00Z', updatedAt: '2026-10-01T09:00:00Z', questions,
+  }
+
+  it('saves a survey as a template from the list', async () => {
+    const calls = mockApi((c) => {
+      if (c.url.pathname === '/api/manager/surveys' && c.method === 'GET') return [listItem()]
+      if (c.url.pathname.endsWith('/save-as-template')) return templateDetail
+      return references(c) ?? []
+    })
+    render(<MemoryRouter><SurveysPage /></MemoryRouter>)
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить как шаблон' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Сохранить как шаблон' }))
+    await waitFor(() => expect(calls.some((c) => c.url.pathname === '/api/manager/surveys/s1/save-as-template')).toBe(true))
+  })
+
+  it('creates a draft survey from a template with teacher and discipline', async () => {
+    const { SurveyFromTemplatePage } = await import('../pages/manager/SurveyFromTemplatePage')
+    const calls = mockApi((c) => {
+      if (c.url.pathname === '/api/manager/survey-templates' && c.method === 'GET') {
+        return [{ id: 'tpl1', type: 'TeachingEvaluation', title: 'Шаблон курса', questionCount: 3,
+          createdAt: '2026-10-01T09:00:00Z', updatedAt: '2026-10-01T09:00:00Z' }]
+      }
+      if (c.url.pathname === '/api/manager/survey-templates/tpl1') return templateDetail
+      if (c.url.pathname === '/api/manager/surveys/from-template') return detail({ status: 'Draft', id: 's-new' })
+      return references(c)
+    })
+    renderAt('/manager/surveys/from-template?templateId=tpl1', '/manager/surveys/from-template', <SurveyFromTemplatePage />)
+
+    await screen.findByText(/Вопросов в шаблоне: 3/)
+    await userEvent.selectOptions(screen.getByLabelText(/^Группа/), 'g1')
+    await userEvent.selectOptions(screen.getByLabelText(/^Преподаватель/), 't1')
+    await userEvent.selectOptions(screen.getByLabelText(/^Дисциплина/), 'd1')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать черновик опроса' }))
+    await waitFor(() => expect(calls.some((c) => c.url.pathname === '/api/manager/surveys/from-template')).toBe(true))
+    const body = calls.find((c) => c.url.pathname === '/api/manager/surveys/from-template')?.body as Record<string, unknown>
+    expect(body).toMatchObject({ templateId: 'tpl1', groupId: 'g1', teacherId: 't1', disciplineId: 'd1' })
+  })
+
+  it('lists templates and deletes one', async () => {
+    const { SurveyTemplatesPage } = await import('../pages/manager/SurveyTemplatesPage')
+    const calls = mockApi((c) => {
+      if (c.url.pathname === '/api/manager/survey-templates' && c.method === 'GET') {
+        return [{ id: 'tpl1', type: 'ServiceSurvey', title: 'Сервис', questionCount: 2,
+          createdAt: '2026-10-01T09:00:00Z', updatedAt: '2026-10-02T09:00:00Z' }]
+      }
+      return undefined
+    })
+    render(<MemoryRouter><SurveyTemplatesPage /></MemoryRouter>)
+    expect(await screen.findByText('Сервис')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.pathname === '/api/manager/survey-templates/tpl1')).toBe(true))
+  })
+})
+
 describe('SurveyTakePage', () => {
   const take = () => renderAt('/student/surveys/s1', '/student/surveys/:id', <SurveyTakePage />)
 
