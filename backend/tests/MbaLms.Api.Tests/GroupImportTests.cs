@@ -125,6 +125,32 @@ public class GroupImportTests(ApiFactory factory) : TestBase(factory)
     }
 
     [Fact]
+    public async Task Corrupt_xlsx_is_import_invalid_file_and_does_not_write()
+    {
+        var manager = await ManagerAsync();
+        var before = await manager.GetJsonAsync<List<GroupDto>>("/api/manager/groups?status=All");
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent("this is not a workbook"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue(ExcelExporter.ContentType);
+        content.Add(file, "file", "not-excel.xlsx");
+        var res = await manager.Http.PostAsync("/api/manager/imports/groups/preview", content);
+        await res.EnsureStatusAsync(HttpStatusCode.BadRequest);
+
+        var json = await res.ErrorJsonAsync();
+        Assert.Equal(ErrorCodes.ImportInvalidFile, json.GetProperty("code").GetString());
+        var body = json.ToString();
+        Assert.DoesNotContain("ClosedXML", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("at MbaLms", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", body, StringComparison.Ordinal);
+
+        var after = await manager.GetJsonAsync<List<GroupDto>>("/api/manager/groups?status=All");
+        Assert.Equal(
+            before.Select(g => g.Id).OrderBy(id => id).ToList(),
+            after.Select(g => g.Id).OrderBy(id => id).ToList());
+    }
+
+    [Fact]
     public async Task Formula_cell_is_rejected_with_coordinates()
     {
         var manager = await ManagerAsync();

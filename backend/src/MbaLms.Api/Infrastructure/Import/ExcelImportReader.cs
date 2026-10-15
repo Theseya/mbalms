@@ -1,3 +1,5 @@
+using System.IO;
+using System.Xml;
 using ClosedXML.Excel;
 
 namespace MbaLms.Api.Infrastructure.Import;
@@ -34,7 +36,7 @@ public static class ExcelImportReader
         IReadOnlyList<string>? extraForbiddenHeaders = null,
         int maxRows = DefaultMaxRows)
     {
-        using var wb = new XLWorkbook(stream);
+        using var wb = OpenWorkbook(stream);
         if (wb.Worksheets.Count == 0)
             throw AppException.BadRequest(ErrorCodes.ImportInvalidFile);
 
@@ -133,6 +135,38 @@ public static class ExcelImportReader
         }
 
         return new ExcelImportTable { SheetName = sheetName, Rows = rows, CellErrors = cellErrors };
+    }
+
+    /// <summary>
+    /// Opens a workbook. Maps package/XML format failures from ClosedXML's OPC reader to
+    /// <see cref="ErrorCodes.ImportInvalidFile"/>. Unknown exceptions, including library bugs, are not remapped.
+    /// </summary>
+    private static XLWorkbook OpenWorkbook(Stream stream)
+    {
+        try
+        {
+            return new XLWorkbook(stream);
+        }
+        catch (Exception ex) when (IsUnreadableWorkbook(ex))
+        {
+            throw AppException.BadRequest(ErrorCodes.ImportInvalidFile);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="FileFormatException"/> is thrown for a corrupt OLE/OPC package;
+    /// <see cref="InvalidDataException"/> for a corrupt zip;
+    /// <see cref="XmlException"/> for unreadable OpenXML markup inside the package.
+    /// </summary>
+    private static bool IsUnreadableWorkbook(Exception ex)
+    {
+        for (var cur = ex; cur is not null; cur = cur.InnerException)
+        {
+            if (cur is AppException) return false;
+            if (cur is FileFormatException or InvalidDataException or XmlException)
+                return true;
+        }
+        return false;
     }
 
     private static string NormalizeHeader(string? value) =>
