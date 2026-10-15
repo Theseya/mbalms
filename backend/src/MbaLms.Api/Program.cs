@@ -182,6 +182,25 @@ app.MapControllers();
 // Liveness: the process is up. Does not touch the database. Production compose does not call this.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
+if (!app.Environment.IsProduction())
+{
+    // Readiness (dev/test only): the configured application database accepts connections.
+    // 503 body is a status token only — no connection strings, exceptions, or server detail.
+    app.MapGet("/ready", async (AppDbContext db, CancellationToken ct) =>
+    {
+        try
+        {
+            if (await db.Database.CanConnectAsync(ct))
+                return Results.Ok(new { status = "ready" });
+        }
+        catch (Exception)
+        {
+            // Swallow provider errors so the public body never includes Npgsql/SQL text.
+        }
+        return Results.Json(new { status = "not_ready" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }).AllowAnonymous();
+}
+
 if (config.GetValue("Database:MigrateOnStartup", false))
 {
     using var scope = app.Services.CreateScope();

@@ -281,7 +281,7 @@ docker compose start api
 
 ### Авторизация
 
-- Запрет по умолчанию: любой endpoint требует входа, публичны только `GET /api/auth/csrf`, `POST /api/auth/login`, `GET /health`, `POST /api/auth/forgot-password` и `POST /api/auth/set-password`. Тест сверяет этот список со всеми зарегистрированными маршрутами.
+- Запрет по умолчанию: любой endpoint требует входа, публичны только `GET /api/auth/csrf`, `POST /api/auth/login`, `GET /health`, `POST /api/auth/forgot-password` и `POST /api/auth/set-password`. Вне Production также публичен `GET /ready` (проверка, что настроенная БД принимает соединения; тело — только `ready` / `not_ready`). Тест сверяет этот список со всеми зарегистрированными маршрутами.
 - `/api/manager/*` — только роль Manager, `/api/student/*` — только роль Student (политики на сервере). Скрытие кнопок в интерфейсе защитой не является.
 - Студент получает данные только по identity из сессии: идентификаторы студента, группы или пользователя из запроса не принимаются. Чужой опрос — 404, чужое уведомление — 404.
 

@@ -26,7 +26,7 @@ public partial class AuthorizationTests(ApiFactory factory) : TestBase(factory)
     /// </summary>
     private static readonly string[] PublicEndpoints =
     [
-        "GET api/auth/csrf", "POST api/auth/login", "GET health",
+        "GET api/auth/csrf", "POST api/auth/login", "GET health", "GET ready",
         "POST api/auth/forgot-password", "POST api/auth/set-password",
     ];
 
