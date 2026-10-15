@@ -25,3 +25,5 @@ services:
 volumes:
   worksheet-check-data:
     name: mbalms-worksheet-check-data
+    # Created by scripts/up-test-db.ps1. Do not docker volume rm this name.
+    external: true

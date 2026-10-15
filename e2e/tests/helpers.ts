@@ -1,5 +1,117 @@
 import { expect, type Page } from '@playwright/test'
 
+const crcTable = Uint32Array.from({ length: 256 }, (_, n) => {
+  let c = n
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  return c >>> 0
+})
+
+function crc32(buf: Buffer) {
+  let c = 0xffffffff
+  for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+function xmlEscape(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function zipStore(files: { name: string; data: Buffer }[]) {
+  const local: Buffer[] = []
+  const central: Buffer[] = []
+  let offset = 0
+  for (const file of files) {
+    const name = Buffer.from(file.name, 'utf8')
+    const crc = crc32(file.data)
+    const localHeader = Buffer.alloc(30 + name.length)
+    localHeader.writeUInt32LE(0x04034b50, 0)
+    localHeader.writeUInt16LE(20, 4)
+    localHeader.writeUInt16LE(0, 6)
+    localHeader.writeUInt16LE(0, 8)
+    localHeader.writeUInt16LE(0, 10)
+    localHeader.writeUInt16LE(0, 12)
+    localHeader.writeUInt32LE(crc, 14)
+    localHeader.writeUInt32LE(file.data.length, 18)
+    localHeader.writeUInt32LE(file.data.length, 22)
+    localHeader.writeUInt16LE(name.length, 26)
+    localHeader.writeUInt16LE(0, 28)
+    name.copy(localHeader, 30)
+    local.push(localHeader, file.data)
+    const centralHeader = Buffer.alloc(46 + name.length)
+    centralHeader.writeUInt32LE(0x02014b50, 0)
+    centralHeader.writeUInt16LE(20, 4)
+    centralHeader.writeUInt16LE(20, 6)
+    centralHeader.writeUInt16LE(0, 8)
+    centralHeader.writeUInt16LE(0, 10)
+    centralHeader.writeUInt16LE(0, 12)
+    centralHeader.writeUInt16LE(0, 14)
+    centralHeader.writeUInt32LE(crc, 16)
+    centralHeader.writeUInt32LE(file.data.length, 20)
+    centralHeader.writeUInt32LE(file.data.length, 24)
+    centralHeader.writeUInt16LE(name.length, 28)
+    centralHeader.writeUInt16LE(0, 30)
+    centralHeader.writeUInt16LE(0, 32)
+    centralHeader.writeUInt16LE(0, 34)
+    centralHeader.writeUInt16LE(0, 36)
+    centralHeader.writeUInt32LE(0, 38)
+    centralHeader.writeUInt32LE(offset, 42)
+    name.copy(centralHeader, 46)
+    central.push(centralHeader)
+    offset += localHeader.length + file.data.length
+  }
+  const centralBuf = Buffer.concat(central)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(0, 4)
+  end.writeUInt16LE(0, 6)
+  end.writeUInt16LE(files.length, 8)
+  end.writeUInt16LE(files.length, 10)
+  end.writeUInt32LE(centralBuf.length, 12)
+  end.writeUInt32LE(offset, 16)
+  end.writeUInt16LE(0, 20)
+  return Buffer.concat([...local, centralBuf, end])
+}
+
+/** Minimal .xlsx for groups import. Cyrillic headers match the product template. */
+export function groupsWorkbookBytes(name: string) {
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Название</t></is></c>
+      <c r="B1" t="inlineStr"><is><t>Дата начала</t></is></c>
+      <c r="C1" t="inlineStr"><is><t>Дата окончания</t></is></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="inlineStr"><is><t>${xmlEscape(name)}</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>`
+  const utf8 = (s: string) => Buffer.from(s, 'utf8')
+  return zipStore([
+    { name: '[Content_Types].xml', data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`) },
+    { name: '_rels/.rels', data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`) },
+    { name: 'xl/workbook.xml', data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Groups" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`) },
+    { name: 'xl/_rels/workbook.xml.rels', data: utf8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`) },
+    { name: 'xl/worksheets/sheet1.xml', data: utf8(sheet) },
+  ])
+}
+
 export const managerEmail = process.env.E2E_MANAGER_EMAIL ?? 'manager@mba.local'
 
 /** Unique label for this process; tests must not rely on leftover rows from earlier runs. */
@@ -20,6 +132,16 @@ export async function loginAsManager(page: Page) {
   await page.getByLabel('Пароль').fill(managerPassword())
   await page.getByRole('button', { name: 'Войти' }).click()
   await expect(page).toHaveURL(/\/manager\//)
+}
+
+/** /login redirects an existing session to a cabinet; wait and sign out first. */
+export async function openLoginForm(page: Page) {
+  await page.goto('/login')
+  const email = page.getByLabel('Email')
+  const logout = page.getByRole('button', { name: 'Выйти' })
+  await expect(email.or(logout)).toBeVisible()
+  if (await logout.isVisible()) await logout.click()
+  await expect(email).toBeVisible()
 }
 
 export type SheetNames = {

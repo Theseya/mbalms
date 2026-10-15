@@ -6,6 +6,16 @@
 
 Установка один раз: `npm install` в этом каталоге, затем `npx playwright install chromium`.
 
+Локальный API в Development должен отдавать `Email:PublicBaseUrl=http://127.0.0.1:5173` (см. `docs/test-environment.md`), иначе ссылки из `/dev/mail` указывают на live `:8080`. Рабочий `.env` и SMTP не менять. Реальный SMTP не проверяется.
+
+Повышенные лимиты — только в окружении процесса этого API, не в `appsettings.Development.json`. Перед полным набором:
+
+```powershell
+dotnet run --project backend/src/MbaLms.Api --launch-profile e2e
+```
+
+Профиль задаёт `RateLimiting__LoginPermitsPerMinute=1000` и `RateLimiting__PasswordMailPermitsPerWindow=1000`. Обычный `dotnet run --launch-profile http` и Production остаются на 20 логинов / мин и 5 писем / 15 мин.
+
 ## Восемь основных путей
 
 Тесты сами создают уникальные группы/студентов/дисциплины. Ручные фикстуры не нужны.
@@ -30,4 +40,14 @@ npx playwright test tests/program-pdf.spec.ts
 
 ## Дополнительно
 
-`npx playwright test` без фильтра также гоняет `more-modules.spec.ts` и `mobile.spec.ts` (преподаватели, расписание, объявления, опросы, журнал изменений, кабинет студента, форма сброса пароля, viewport 390×844).
+`npx playwright test` без фильтра также гоняет:
+
+| Файл | Сценарии |
+|---|---|
+| `tests/more-modules.spec.ts` | преподаватели, расписание, объявления, опросы, журнал изменений, кабинет студента, форма сброса пароля |
+| `tests/mobile.spec.ts` | viewport 390×844 |
+| `tests/import.spec.ts` | битый .xlsx → понятная ошибка; валидный файл групп импортируется |
+| `tests/access.spec.ts` | приглашение и forgot-password через Development-outbox, ссылка на `127.0.0.1:5173`, установка пароля |
+| `tests/student-paths.spec.ts` | расписание студента, отправка опроса, смена пароля в профиле |
+
+Файлы `_tmp_*.spec.ts` в сохранённый набор не входят (`testIgnore` в `playwright.config.ts`).

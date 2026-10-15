@@ -41,6 +41,7 @@ public class PasswordInviteTests(ApiFactory factory) : TestBase(factory)
         Assert.Equal(PasswordEmailComposer.PurposeInvite, preview.Purpose);
         Assert.Contains(email, preview.TextBody);
         Assert.Contains("/set-password?", preview.TextBody);
+        Assert.Contains("http://127.0.0.1:5173/set-password?", preview.TextBody);
         Assert.DoesNotContain(bootstrap, preview.TextBody);
 
         var (linkEmail, token) = ParseSetupLink(preview.TextBody);
@@ -145,6 +146,7 @@ public class PasswordInviteTests(ApiFactory factory) : TestBase(factory)
 
         var preview = await manager.GetJsonAsync<CapturedEmailDto>($"/api/dev/mail/latest?to={Uri.EscapeDataString(email)}");
         Assert.Equal(PasswordEmailComposer.PurposeReset, preview.Purpose);
+        Assert.Contains("http://127.0.0.1:5173/set-password?", preview.TextBody);
         var (_, token) = ParseSetupLink(preview.TextBody);
 
         const string newPassword = "Reset-Via-Mail-1";

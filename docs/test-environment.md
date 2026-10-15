@@ -15,9 +15,13 @@
 
 Скрипт:
 
-- создаёт или переиспользует volume `mbalms-worksheet-check-data`;
-- поднимает контейнер `mbalms-worksheet-check` на `127.0.0.1:55433`;
-- создаёт базу приложения `worksheet_manual`, если её ещё нет (`OWNER` в кавычках: роль `check` — зарезервированное слово).
+- создаёт volume `mbalms-worksheet-check-data`, если его нет (никогда не удаляет);
+- перед переиспользованием существующего контейнера проверяет: named volume на фактическом PGDATA, на PGDATA нет tmpfs, порт опубликован на `127.0.0.1` из `.env.test`; при несовпадении останавливается и ничего не удаляет;
+- переиспользует уже существующий контейнер `mbalms-worksheet-check` (`docker start`, без `rm`);
+- если контейнера нет — `compose up -d` с `external` volume;
+- создаёт базу приложения `worksheet_manual`, если её ещё нет (`OWNER` в кавычках: роль `check` — зарезервированное слово); `psql` с `ON_ERROR_STOP`, коды выхода docker/psql проверяются.
+
+Повторный запуск того же скрипта должен написать `Reusing running container` / `Application database worksheet_manual already exists` и не требовать ручного удаления контейнера.
 
 Эквивалент без скрипта:
 
@@ -35,6 +39,15 @@ docker compose -p mbalms-test -f docker-compose.test.yml --env-file .env.test up
 - `Database__MigrateOnStartup=true`;
 - `Seed__ManagerEmail` / `Seed__ManagerPassword` — только в окружении процесса, не в git;
 - `ASPNETCORE_ENVIRONMENT=Development`, `http://127.0.0.1:5001`.
+
+Development overlay (`appsettings.Development.json` + профиль `http` в `launchSettings.json`), не рабочий `.env` и не `appsettings.json`:
+
+- `Email:PublicBaseUrl` = `http://127.0.0.1:5173` — ссылки приглашения и восстановления из Development-outbox открывают локальный Vite без подмены host;
+- `Email:Provider` = `Development` (outbox, не SMTP).
+
+Лимиты входа и писем в Development **не** повышены: действуют значения `appsettings.json` (20 логинов / мин, 5 писем / 15 мин). Для полного Playwright-набора запускайте локальный API с явными переменными процесса — профиль `e2e` в `launchSettings.json`, см. `e2e/README.md`. Production не менять.
+
+Реальный SMTP в этой среде не проверяется.
 
 Фронт: Vite `http://127.0.0.1:5173` с прокси на API.
 
