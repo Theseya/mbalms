@@ -57,4 +57,4 @@ npx playwright test tests/program-pdf.spec.ts
 
 Файлы `_tmp_*.spec.ts` в сохранённый набор не входят (`testIgnore` в `playwright.config.ts`).
 
-Карта по пунктам меню, последний прогон (**20 passed**) и оставшиеся ограничения: `docs/e2e-coverage.md`.
+Карта по пунктам меню: полный набор **20 passed** до финального уточнения локаторов; после уточнения повторно прошли `grades.spec.ts` и `worksheet-coverage.spec.ts`; полный набор после уточнения заново не запускался. Оставшиеся ограничения: `docs/e2e-coverage.md`.
