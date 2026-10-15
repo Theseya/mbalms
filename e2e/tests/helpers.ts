@@ -128,10 +128,19 @@ export function managerPassword(): string {
 export async function loginAsManager(page: Page) {
   await page.goto('/login')
   if (page.url().includes('/manager/')) return
+  await openLoginForm(page)
   await page.getByLabel('Email').fill(managerEmail)
   await page.getByLabel('Пароль').fill(managerPassword())
   await page.getByRole('button', { name: 'Войти' }).click()
   await expect(page).toHaveURL(/\/manager\//)
+}
+
+export async function loginAsStudent(page: Page, email: string, password = 'E2e-Student-1') {
+  await openLoginForm(page)
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Пароль').fill(password)
+  await page.getByRole('button', { name: 'Войти' }).click()
+  await expect(page).toHaveURL(/\/student/)
 }
 
 /** /login redirects an existing session to a cabinet; wait and sign out first. */
@@ -196,14 +205,18 @@ export async function createPeriod(page: Page, name: string) {
   await expect(dialog).toBeHidden()
 }
 
+export async function selectPeriod(page: Page, name: string) {
+  const period = page.getByLabel('Учебный период')
+  const periodValue = await period.locator('option').filter({ hasText: name }).first().getAttribute('value')
+  if (!periodValue) throw new Error(`Period «${name}» not found.`)
+  await period.selectOption(periodValue)
+}
+
 export async function openSheet(page: Page, names: SheetNames) {
   await page.goto('/manager/worksheet')
   await page.getByLabel('Дисциплина').selectOption({ label: names.discipline })
   await page.getByLabel('Группа').selectOption({ label: names.group })
-  const period = page.getByLabel('Учебный период')
-  const periodValue = await period.locator('option').filter({ hasText: names.period }).first().getAttribute('value')
-  if (!periodValue) throw new Error(`Period «${names.period}» not found.`)
-  await period.selectOption(periodValue)
+  await selectPeriod(page, names.period)
   await expect(page.getByRole('heading', { name: new RegExp(`Ведомость:.*${escapeRegExp(names.discipline)}`) })).toBeVisible()
 }
 

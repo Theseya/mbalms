@@ -49,5 +49,12 @@ npx playwright test tests/program-pdf.spec.ts
 | `tests/import.spec.ts` | битый .xlsx → понятная ошибка; валидный файл групп импортируется |
 | `tests/access.spec.ts` | приглашение и forgot-password через Development-outbox, ссылка на `127.0.0.1:5173`, установка пароля |
 | `tests/student-paths.spec.ts` | расписание студента, отправка опроса, смена пароля в профиле |
+| `tests/grades.spec.ts` | черновик оценки скрыт у студента; публикация показывает значение/дисциплину/период и уведомление; снятие публикации |
+| `tests/worksheet-coverage.spec.ts` | несколько категорий и работ; автопосещаемость во взвешенном и среднем; reload; изоляция двух периодов |
+| `tests/survey-templates.spec.ts` | создание шаблона и черновика опроса из шаблона |
+| `tests/announcements-student.spec.ts` | опубликованное объявление видно только студенту своей группы |
+| `tests/manager-account.spec.ts` | смена пароля тестового менеджера и повторный вход (пароль восстанавливается) |
 
 Файлы `_tmp_*.spec.ts` в сохранённый набор не входят (`testIgnore` в `playwright.config.ts`).
+
+Карта по пунктам меню, последний прогон (**20 passed**) и оставшиеся ограничения: `docs/e2e-coverage.md`.

@@ -51,7 +51,7 @@ Development overlay (`appsettings.Development.json` + профиль `http` в `
 
 Фронт: Vite `http://127.0.0.1:5173` с прокси на API.
 
-Playwright: каталог `e2e/`, см. `e2e/README.md`. Переменная `E2E_MANAGER_PASSWORD` совпадает с seed менеджера. Для проверки ПУД после `docker restart` того же контейнера: `E2E_RESTART_TEST_DB=1`.
+Playwright: каталог `e2e/`, см. `e2e/README.md`. Карта покрытия по пунктам меню: `docs/e2e-coverage.md`. Переменная `E2E_MANAGER_PASSWORD` совпадает с seed менеджера. Для проверки ПУД после `docker restart` того же контейнера: `E2E_RESTART_TEST_DB=1`.
 
 ## Сохранность данных
 
