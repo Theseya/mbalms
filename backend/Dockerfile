@@ -10,9 +10,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     ASPNETCORE_ENVIRONMENT=Production \
-    DataProtection__KeysPath=/keys
+    DataProtection__KeysPath=/keys \
+    Documents__StoragePath=/data/documents
 COPY --from=build /app .
-RUN mkdir -p /keys && chown $APP_UID /keys
+RUN mkdir -p /keys /data/documents && chown $APP_UID /keys /data/documents
 USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "MbaLms.Api.dll"]

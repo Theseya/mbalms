@@ -3,13 +3,16 @@ using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Infrastructure.Import;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace MbaLms.Api.Controllers.Manager;
 
 [Route("api/manager/imports/teachers")]
-public class TeachersImportController(AppDbContext db, CurrentUser current, ImportSessionStore sessions)
+public class TeachersImportController(
+    AppDbContext db, CurrentUser current, ImportSessionStore sessions,
+    ChangeLogWriter changeLog, UserManager<AppUser> users)
     : ManagerControllerBase(db)
 {
     public const string Entity = "teachers";
@@ -152,24 +155,41 @@ public class TeachersImportController(AppDbContext db, CurrentUser current, Impo
             }
         }
 
+        var actorEmail = await ActorEmailAsync();
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
             foreach (var row in plannedCreates)
             {
-                Db.Teachers.Add(new Teacher
+                var t = new Teacher
                 {
                     Id = Guid.CreateVersion7(),
                     LastName = row.LastName,
                     FirstName = row.FirstName,
                     MiddleName = Clean(row.MiddleName),
                     Email = Clean(row.Email)
-                });
+                };
+                var snap = TeacherChangeLog.From(t);
+                changeLog.Add(
+                    ChangeLogEntityType.Teacher, t.Id, ChangeLogAction.Created,
+                    TeacherChangeLog.ForCreate(snap),
+                    TeacherChangeLog.Context(snap, actorEmail, TeacherChangeLog.SourceExcelImport));
+                Db.Teachers.Add(t);
             }
 
             foreach (var (row, entity) in plannedUpdates)
+            {
+                var before = TeacherChangeLog.From(entity);
                 ApplyUpdate(entity, row, matchedByEmail: !string.IsNullOrWhiteSpace(row.Email)
                     && snaps.Any(t => t.Id == entity.Id && EmailsEqual(t.Email, row.Email)));
+                var after = TeacherChangeLog.From(entity);
+                var changes = TeacherChangeLog.Diff(before, after);
+                if (changes.Count == 0) continue;
+                changeLog.Add(
+                    ChangeLogEntityType.Teacher, entity.Id, ChangeLogAction.Updated,
+                    changes, TeacherChangeLog.Context(after, actorEmail, TeacherChangeLog.SourceExcelImport));
+            }
 
             await Db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -285,6 +305,12 @@ public class TeachersImportController(AppDbContext db, CurrentUser current, Impo
             return MatchResult.Conflict("email");
 
         return MatchResult.Ok(teacher);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private static void ApplyUpdate(Teacher entity, TeacherImportRow row, bool matchedByEmail)

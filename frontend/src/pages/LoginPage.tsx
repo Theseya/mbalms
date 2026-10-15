@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { LanguageSwitcher } from '../components/Layout'
@@ -54,6 +54,9 @@ export function LoginPage() {
         <button type="submit" className="btn btn-primary btn-block" disabled={busy || !email || !password}>
           {t('login.submit')}
         </button>
+        <p className="muted" style={{ marginTop: '0.75rem', textAlign: 'center' }}>
+          <Link to="/forgot-password">{t('login.forgotPassword')}</Link>
+        </p>
       </form>
     </div>
   )

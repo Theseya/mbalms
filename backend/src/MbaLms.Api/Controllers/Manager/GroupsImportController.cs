@@ -3,13 +3,16 @@ using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Infrastructure.Import;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace MbaLms.Api.Controllers.Manager;
 
 [Route("api/manager/imports/groups")]
-public class GroupsImportController(AppDbContext db, CurrentUser current, ImportSessionStore sessions)
+public class GroupsImportController(
+    AppDbContext db, CurrentUser current, ImportSessionStore sessions,
+    ChangeLogWriter changeLog, UserManager<AppUser> users)
     : ManagerControllerBase(db)
 {
     public const string Entity = "groups";
@@ -148,13 +151,14 @@ public class GroupsImportController(AppDbContext db, CurrentUser current, Import
         }
 
         var programId = await Db.Programs.Select(p => p.Id).FirstAsync(ct);
+        var actorEmail = await ActorEmailAsync();
 
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
             foreach (var row in plannedCreates)
             {
-                Db.Groups.Add(new Group
+                var group = new Group
                 {
                     Id = Guid.CreateVersion7(),
                     ProgramId = programId,
@@ -162,15 +166,28 @@ public class GroupsImportController(AppDbContext db, CurrentUser current, Import
                     StartDate = row.StartDate,
                     EndDate = row.EndDate,
                     Status = GroupStatus.Active
-                });
+                };
+                var snap = GroupChangeLog.From(group);
+                changeLog.Add(
+                    ChangeLogEntityType.Group, group.Id, ChangeLogAction.Created,
+                    GroupChangeLog.ForCreate(snap),
+                    GroupChangeLog.Context(snap, actorEmail, GroupChangeLog.SourceExcelImport));
+                Db.Groups.Add(group);
             }
 
             foreach (var (row, entity) in plannedUpdates)
             {
                 // Name and dates only — Status / ArchivedAt stay as-is (including archived groups).
+                var before = GroupChangeLog.From(entity);
                 entity.Name = row.Name.Trim();
                 entity.StartDate = row.StartDate;
                 entity.EndDate = row.EndDate;
+                var after = GroupChangeLog.From(entity);
+                var changes = GroupChangeLog.Diff(before, after);
+                if (changes.Count == 0) continue;
+                changeLog.Add(
+                    ChangeLogEntityType.Group, entity.Id, ChangeLogAction.Updated,
+                    changes, GroupChangeLog.Context(after, actorEmail, GroupChangeLog.SourceExcelImport));
             }
 
             await Db.SaveChangesAsync(ct);
@@ -183,6 +200,12 @@ public class GroupsImportController(AppDbContext db, CurrentUser current, Import
         }
 
         return new ImportConfirmResultDto(plannedCreates.Count, plannedUpdates.Count, payload.Rows.Count - writable.Count);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private static GroupImportRow ParseRow(ExcelImportDataRow raw, string sheet)

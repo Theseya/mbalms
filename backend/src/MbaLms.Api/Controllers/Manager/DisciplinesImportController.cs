@@ -2,13 +2,16 @@ using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Infrastructure.Import;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace MbaLms.Api.Controllers.Manager;
 
 [Route("api/manager/imports/disciplines")]
-public class DisciplinesImportController(AppDbContext db, CurrentUser current, ImportSessionStore sessions)
+public class DisciplinesImportController(
+    AppDbContext db, CurrentUser current, ImportSessionStore sessions,
+    ChangeLogWriter changeLog, UserManager<AppUser> users)
     : ManagerControllerBase(db)
 {
     public const string Entity = "disciplines";
@@ -166,22 +169,37 @@ public class DisciplinesImportController(AppDbContext db, CurrentUser current, I
             }
         }
 
+        var actorEmail = await ActorEmailAsync();
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
             foreach (var row in plannedCreates)
             {
-                Db.Disciplines.Add(new Discipline
+                var d = new Discipline
                 {
                     Id = Guid.CreateVersion7(),
                     Name = row.Name.Trim(),
                     Description = Clean(row.Description)
-                });
+                };
+                var snap = DisciplineChangeLog.From(d);
+                changeLog.Add(
+                    ChangeLogEntityType.Discipline, d.Id, ChangeLogAction.Created,
+                    DisciplineChangeLog.ForCreate(snap),
+                    DisciplineChangeLog.Context(snap, actorEmail, DisciplineChangeLog.SourceExcelImport));
+                Db.Disciplines.Add(d);
             }
             foreach (var (row, entity) in plannedUpdates)
             {
+                var before = DisciplineChangeLog.From(entity);
                 entity.Name = row.Name.Trim();
                 entity.Description = Clean(row.Description);
+                var after = DisciplineChangeLog.From(entity);
+                var changes = DisciplineChangeLog.Diff(before, after);
+                if (changes.Count == 0) continue;
+                changeLog.Add(
+                    ChangeLogEntityType.Discipline, entity.Id, ChangeLogAction.Updated,
+                    changes, DisciplineChangeLog.Context(after, actorEmail, DisciplineChangeLog.SourceExcelImport));
             }
             await Db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -193,6 +211,12 @@ public class DisciplinesImportController(AppDbContext db, CurrentUser current, I
         }
 
         return new ImportConfirmResultDto(plannedCreates.Count, plannedUpdates.Count, payload.Rows.Count - writable.Count);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private static ImportPreviewDto ToPreview(string importId, DisciplineImportPayload payload, IReadOnlyList<ImportCellError> fileErrors) =>

@@ -165,9 +165,9 @@ describe('SchedulePage', () => {
 describe('StudentSchedulePage', () => {
   it('marks cancelled lessons and shows times as entered in the app time zone', async () => {
     const own: StudentLesson[] = [
-      { id: 'a', disciplineName: 'Стратегия', teacherName: 'Петрова Анна', startsAt: '2031-05-01T07:00:00Z', endsAt: '2031-05-01T08:00:00Z',
+      { id: 'a', disciplineId: 'd1', disciplineName: 'Стратегия', teacherName: 'Петрова Анна', startsAt: '2031-05-01T07:00:00Z', endsAt: '2031-05-01T08:00:00Z',
         startsAtLocal: '2031-05-01T10:00:00', endsAtLocal: '2031-05-01T11:00:00', format: null, location: null, comment: null, status: 'Cancelled' },
-      { id: 'b', disciplineName: 'Маркетинг', teacherName: 'Петрова Анна', startsAt: '2031-05-01T21:30:00Z', endsAt: '2031-05-01T22:30:00Z',
+      { id: 'b', disciplineId: 'd2', disciplineName: 'Маркетинг', teacherName: 'Петрова Анна', startsAt: '2031-05-01T21:30:00Z', endsAt: '2031-05-01T22:30:00Z',
         startsAtLocal: '2031-05-02T00:30:00', endsAtLocal: '2031-05-02T01:30:00', format: null, location: null, comment: null, status: 'Scheduled' },
     ]
     mockApi(() => own)

@@ -167,7 +167,7 @@ fieldset:disabled input, fieldset:disabled select, fieldset:disabled textarea { 
 .alert-info { background: var(--primary-soft); color: var(--primary); }
 .alert-warning { background: #fff6e0; color: #6b4a00; }
 .scale-labels { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 0.9em; color: var(--muted); }
-.confirm-details { margin: 0 0 12px; padding-left: 20px; }
+.confirm-details { margin: 0 0 12px; padding-left: 20px; overflow-wrap: anywhere; }
 .grade-input { width: 6em; }
 tr.row-dirty td { background: #fffbea; }
 .alert-warning ul { margin: 4px 0; padding-left: 20px; }
@@ -200,6 +200,7 @@ td.wrap { word-break: break-word; max-width: 280px; }
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgb(15 23 42 / 45%); display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px; overflow-y: auto; }
+.modal-backdrop.modal-stacked { z-index: 60; }
 .modal { width: 100%; max-width: 560px; background: var(--surface); border-radius: var(--radius); padding: 20px; box-shadow: 0 12px 40px rgb(0 0 0 / 20%); }
 .modal-wide { max-width: 860px; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -280,6 +281,17 @@ td.wrap { word-break: break-word; max-width: 280px; }
 }
 .lesson h3 { margin: 0 0 2px; }
 .lesson .comment { color: var(--muted); font-size: 0.875rem; white-space: pre-wrap; margin: 8px 0 0; }
+.announcement-form { max-width: 40rem; }
+.checkbox-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; padding: 4px 0; }
+.announcement-list { display: flex; flex-direction: column; gap: 16px; }
+.announcement-card h2 { margin: 4px 0 8px; font-size: 1.15rem; }
+.announcement-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.announcement-preview-list li { margin-bottom: 8px; }
 .lesson-list, .survey-list { display: grid; gap: 6px; }
 .plain-list { list-style: none; padding: 0; margin: 0 0 8px; }
 .plain-list li { padding: 8px 0; border-bottom: 1px solid var(--border); line-height: 1.4; }
@@ -309,8 +321,119 @@ td.wrap { word-break: break-word; max-width: 280px; }
 .bars li { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: center; margin-bottom: 4px; }
 .bar { display: block; height: 10px; background: var(--primary); border-radius: 4px; min-width: 2px; }
 
+.change-log-filters { width: 100%; }
+.change-log-filters .field { min-width: 160px; }
+.change-log-fields { margin: 8px 0 0; padding-left: 18px; overflow-wrap: anywhere; word-break: break-word; }
+.change-log-old {
+  opacity: 0.75;
+  text-decoration: none;
+}
+.change-log-object { word-break: break-word; overflow-wrap: anywhere; }
+.change-log-object-meta { margin-top: 2px; }
+.change-log-source { margin: 6px 0 0; }
+.layout-fluid .table-wrap:has(.change-log-table) {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.change-log-table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+.change-log-table th:nth-child(2),
+.change-log-table td.change-log-author {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  min-width: 16rem;
+}
+.change-log-table td.change-log-when,
+.change-log-table td.change-log-action {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.change-log-table td.change-log-object-cell,
+.change-log-table td.change-log-details-cell {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 14rem;
+  max-width: 28rem;
+}
+
+/* Discipline programme (ПУД) */
+.program-section { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+.program-section h3 { margin: 0 0 8px; font-size: 1rem; }
+.program-file { margin: 0 0 8px; overflow-wrap: anywhere; }
+.program-empty { padding: 4px 0 8px; }
+.program-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.program-inline { display: inline-block; margin-left: 8px; }
+.lesson-actions { margin: 8px 0 0; }
+.pdf-viewer { margin-top: 12px; }
+.pdf-frame { display: block; width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.pdf-fallback { padding: 16px; color: var(--muted); }
+.pdf-actions { margin: 8px 0 0; }
+
+/* Working sheet */
+/* Hint sits in the next grid row so it cannot shift the period select relative to the others. */
+.worksheet-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 16px;
+  row-gap: 4px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+.worksheet-filters .field { min-width: 0; margin-bottom: 0; }
+.worksheet-filters .hint { grid-column: 1 / -1; }
+.worksheet-panel h2 { margin: 0; }
+.worksheet-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+.worksheet-panel p { margin: 4px 0; }
+.ws-input { width: 5.5em; }
+.ws-inline { display: flex; align-items: center; gap: 8px; }
+.worksheet-elements { list-style: none; margin: 0 0 8px; padding: 0; }
+.worksheet-category { margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.worksheet-works { list-style: none; margin: 8px 0 0; padding: 0 0 0 12px; }
+.worksheet-work { display: flex; gap: 8px; align-items: end; margin-bottom: 4px; }
+.worksheet-attendance-settings { margin: 12px 0 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.worksheet-attendance-settings h3 { margin: 0 0 4px; font-size: 1rem; }
+.worksheet-mode { border: 0; margin: 8px 0 12px; padding: 0; }
+.worksheet-mode legend { font-weight: 600; padding: 0; }
+.worksheet-include { margin: 4px 0 8px; }
+.worksheet-table thead th { vertical-align: bottom; }
+.worksheet-element { display: grid; grid-template-columns: minmax(0, 1fr) 8em auto; gap: 0 12px; align-items: end; }
+.worksheet-element > .btn { margin-bottom: 12px; }
+.worksheet-element .ws-input { width: 100%; }
+/* Wide sheets scroll inside .table-wrap instead of squeezing the columns. */
+.worksheet-table { min-width: 1040px; }
+.worksheet-table td:first-child { min-width: 12em; }
+.worksheet-table th small { font-weight: 400; }
+.worksheet-table td.ws-nowrap { white-space: nowrap; }
+.worksheet-table td.ws-calc { min-width: 9em; }
+.worksheet-final { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.worksheet-final-value { font-size: 1.15rem; }
+.worksheet-manual { display: flex; align-items: center; gap: 6px; }
+.worksheet-attendance { min-width: 12em; }
+tr.row-moved td { background: #f6f5f2; color: var(--muted); }
+
 /* Mobile */
 @media (max-width: 800px) {
+  .worksheet-filters { grid-template-columns: 1fr; }
+  .worksheet-element { grid-template-columns: minmax(0, 1fr) 7em; }
+  .worksheet-element > .btn { grid-column: 1 / -1; justify-self: start; margin: 0 0 12px; }
+  .worksheet-table { min-width: 0; }
+  .worksheet-table td:first-child { min-width: 0; font-weight: 600; }
+  .worksheet-table td .ws-input { width: 7em; min-height: 40px; font-size: 1rem; }
+  .worksheet-table td { padding: 6px 12px; }
+  .worksheet-panel-header { flex-wrap: wrap; }
+  .worksheet-panel-header .btn { padding: 8px 12px; font-size: 0.9375rem; }
+  .worksheet-manual .btn { min-height: 40px; }
+  /* Mobile browsers rarely render embedded PDFs: offer the new-tab link only. */
+  .pdf-frame { display: none; }
+  .pdf-actions .btn { display: block; width: 100%; text-align: center; padding: 10px; font-size: 1rem; }
+  .program-inline { display: block; margin: 6px 0 0; }
+  .program-actions .btn { padding: 8px 12px; font-size: 0.9375rem; }
   .menu-toggle { display: inline-block; }
   .user-name { display: none; }
   .sidebar {
@@ -335,4 +458,50 @@ td.wrap { word-break: break-word; max-width: 280px; }
   .actions-col { white-space: normal; }
   .actions-col .btn { margin: 4px 4px 0 0; }
   .check-col { width: auto; }
+
+  /* Change log stays a real table: scroll the wrap, not the page. */
+  .table-wrap:has(.change-log-table) {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .change-log-table { display: table; width: max-content; min-width: 100%; }
+  .change-log-table thead { display: table-header-group; }
+  .change-log-table tbody { display: table-row-group; }
+  .change-log-table tr {
+    display: table-row;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .change-log-table th,
+  .change-log-table td {
+    display: table-cell;
+    width: auto;
+    max-width: none;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+    text-align: left !important;
+  }
+  .change-log-table td[data-label]::before { content: none; }
+  .change-log-table td.change-log-author {
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+  .change-log-table td.change-log-object-cell,
+  .change-log-table td.change-log-details-cell {
+    max-width: 28rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .modal-backdrop { padding: 12px; align-items: stretch; }
+  .modal { max-width: none; }
+  .form-actions { flex-wrap: wrap; }
+  .form-actions .btn { min-height: 44px; }
 }

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,7 +34,10 @@ public record LessonOverlapDto(Guid Id, string GroupName, string DisciplineName,
 public record ScheduleChangedPayload(Guid LessonId, string Change, string DisciplineName, DateTime StartsAtLocal);
 
 [Route("api/manager/lessons")]
-public class LessonsController(AppDbContext db, AppTime time, NotificationService notifications) : ManagerControllerBase(db)
+public class LessonsController(
+    AppDbContext db, AppTime time, NotificationService notifications,
+    ChangeLogWriter changeLog, UserManager<AppUser> users, CurrentUser current)
+    : ManagerControllerBase(db)
 {
     [HttpGet]
     public async Task<List<LessonDto>> List([FromQuery] Guid? groupId, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
@@ -79,6 +83,15 @@ public class LessonsController(AppDbContext db, AppTime time, NotificationServic
     {
         var lesson = new Lesson { Id = Guid.CreateVersion7() };
         await ApplyAsync(lesson, r, ct);
+        var snap = await SnapshotAsync(lesson, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Lesson,
+            lesson.Id,
+            ChangeLogAction.Created,
+            LessonChangeLog.ForCreate(snap),
+            LessonChangeLog.Context(snap, actorEmail, time));
+
         Db.Lessons.Add(lesson);
         await NotifyAsync(lesson, lesson.GroupId, "created", ct);
         await Db.SaveChangesAsync(ct);
@@ -92,15 +105,25 @@ public class LessonsController(AppDbContext db, AppTime time, NotificationServic
         var oldGroupId = lesson.GroupId;
         var wasScheduled = lesson.Status == LessonStatus.Scheduled;
         await RequireActiveGroupAsync(oldGroupId, nameof(r.GroupId), ct);
+        var before = await SnapshotAsync(lesson, ct);
         await ApplyAsync(lesson, r, ct);
-        Db.ChangeTracker.DetectChanges();
-        // Saving the form without changes must not spam the group with notifications.
-        if (Db.Entry(lesson).Properties.Any(p => p.IsModified))
-        {
-            var change = wasScheduled && lesson.Status == LessonStatus.Cancelled ? "cancelled" : "updated";
-            await NotifyAsync(lesson, lesson.GroupId, change, ct);
-            if (oldGroupId != lesson.GroupId) await NotifyAsync(lesson, oldGroupId, "deleted", ct);
-        }
+        var after = await SnapshotAsync(lesson, ct);
+        var changes = LessonChangeLog.Diff(before, after);
+        if (changes.Count == 0)
+            return await Get(id, ct);
+
+        var change = wasScheduled && lesson.Status == LessonStatus.Cancelled ? "cancelled" : "updated";
+        await NotifyAsync(lesson, lesson.GroupId, change, ct);
+        if (oldGroupId != lesson.GroupId) await NotifyAsync(lesson, oldGroupId, "deleted", ct);
+
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Lesson,
+            lesson.Id,
+            ChangeLogAction.Updated,
+            changes,
+            LessonChangeLog.Context(after, actorEmail, time));
+
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -110,6 +133,15 @@ public class LessonsController(AppDbContext db, AppTime time, NotificationServic
     {
         var lesson = await Db.Lessons.FirstOrDefaultAsync(l => l.Id == id, ct) ?? throw AppException.NotFound();
         await RequireActiveGroupAsync(lesson.GroupId, "groupId", ct);
+        var snap = await SnapshotAsync(lesson, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Lesson,
+            lesson.Id,
+            ChangeLogAction.Deleted,
+            LessonChangeLog.ForDelete(snap),
+            LessonChangeLog.Context(snap, actorEmail, time));
+
         await NotifyAsync(lesson, lesson.GroupId, "deleted", ct);
         Db.Lessons.Remove(lesson);
         await Db.SaveChangesAsync(ct);
@@ -139,11 +171,27 @@ public class LessonsController(AppDbContext db, AppTime time, NotificationServic
         lesson.Status = r.Status ?? LessonStatus.Scheduled;
     }
 
+    private async Task<LessonChangeLog.Snapshot> SnapshotAsync(Lesson lesson, CancellationToken ct)
+    {
+        var groupName = await Db.Groups.AsNoTracking().Where(g => g.Id == lesson.GroupId).Select(g => g.Name).FirstAsync(ct);
+        var disciplineName = await Db.Disciplines.AsNoTracking().Where(d => d.Id == lesson.DisciplineId).Select(d => d.Name).FirstAsync(ct);
+        var teacher = await Db.Teachers.AsNoTracking().FirstAsync(t => t.Id == lesson.TeacherId, ct);
+        return new LessonChangeLog.Snapshot(
+            groupName, disciplineName, teacher.FullName,
+            lesson.StartsAt, lesson.EndsAt, lesson.Format, lesson.Location, lesson.Comment, lesson.Status);
+    }
+
     private async Task NotifyAsync(Lesson lesson, Guid groupId, string change, CancellationToken ct)
     {
         var discipline = await Db.Disciplines.Where(d => d.Id == lesson.DisciplineId).Select(d => d.Name).FirstAsync(ct);
         await notifications.NotifyGroupAsync(groupId, NotificationType.ScheduleChanged,
             new ScheduleChangedPayload(lesson.Id, change, discipline, time.ToLocal(lesson.StartsAt)), ct);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 }
 

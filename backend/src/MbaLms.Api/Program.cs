@@ -3,6 +3,8 @@ using System.Threading.RateLimiting;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using MbaLms.Api.Infrastructure.Documents;
+using MbaLms.Api.Infrastructure.Email;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -16,12 +18,32 @@ var config = builder.Configuration;
 
 builder.Services.Configure<AppOptions>(config.GetSection(AppOptions.Section));
 builder.Services.Configure<SeedOptions>(config.GetSection(SeedOptions.Section));
+builder.Services.Configure<EmailOptions>(config.GetSection(EmailOptions.Section));
+builder.Services.Configure<DocumentOptions>(config.GetSection(DocumentOptions.Section));
+builder.Services.AddSingleton<DocumentStorage>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AppTime>();
 builder.Services.AddSingleton<MbaLms.Api.Infrastructure.Import.ImportSessionStore>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<ChangeLogWriter>();
+builder.Services.AddScoped<MbaLms.Api.Controllers.Manager.GradeWriter>();
+builder.Services.AddScoped<PasswordSetupLinkService>();
+
+var emailOptions = config.GetSection(EmailOptions.Section).Get<EmailOptions>() ?? new EmailOptions();
+var emailProvider = emailOptions.Provider?.Trim() ?? "None";
+builder.Services.AddSingleton<IEmailOutbox, MemoryEmailOutbox>();
+if (string.Equals(emailProvider, "Development", StringComparison.OrdinalIgnoreCase))
+{
+    // Capture only — no network delivery. Intended for Development / Testing.
+    builder.Services.AddSingleton<IEmailSender, DevelopmentEmailSender>();
+}
+else
+{
+    // Production default and any unknown provider: refuse with mail_not_configured (future: Smtp).
+    builder.Services.AddSingleton<IEmailSender, UnavailableEmailSender>();
+}
 
 var connectionString = config.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -32,6 +54,8 @@ builder.Services
     .AddIdentityCore<AppUser>(o =>
     {
         o.User.RequireUniqueEmail = true;
+        // Do not require confirmed email — would lock out existing accounts.
+        o.SignIn.RequireConfirmedEmail = false;
         o.Password.RequiredLength = 8;
         o.Password.RequireNonAlphanumeric = false;
         o.Lockout.MaxFailedAccessAttempts = 5;
@@ -40,7 +64,11 @@ builder.Services
     })
     .AddRoles<IdentityRole<Guid>>()
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager();
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
+
+builder.Services.Configure<DataProtectionTokenProviderOptions>(o =>
+    o.TokenLifespan = emailOptions.TokenLifespan);
 
 // Keys protect auth/antiforgery cookies; they must survive restarts or every user gets signed out.
 var keysPath = config["DataProtection:KeysPath"];
@@ -93,12 +121,21 @@ if (useForwardedHeaders)
 }
 
 var loginPermitLimit = config.GetValue("RateLimiting:LoginPermitsPerMinute", 20);
+var passwordMailPermitLimit = config.GetValue("RateLimiting:PasswordMailPermitsPerWindow", 5);
+var passwordMailWindowMinutes = config.GetValue("RateLimiting:PasswordMailWindowMinutes", 15);
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.AddPolicy("login", ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = loginPermitLimit, Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("password-mail", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = passwordMailPermitLimit,
+            Window = TimeSpan.FromMinutes(passwordMailWindowMinutes),
+        }));
 });
 
 builder.Services
@@ -134,7 +171,7 @@ app.UseStatusCodePages();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
-    app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "MBA Mini-LMS API"));
+    app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "LMS ДПО API"));
 }
 
 app.UseRateLimiter();
@@ -142,6 +179,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+// Liveness: the process is up. Does not touch the database. Production compose does not call this.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 if (config.GetValue("Database:MigrateOnStartup", false))

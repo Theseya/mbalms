@@ -95,4 +95,7 @@ public static class HttpResponseExtensions
         var json = await res.Content.ReadFromJsonAsync<JsonElement>();
         return json.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
+
+    public static async Task<JsonElement> ErrorJsonAsync(this HttpResponseMessage res) =>
+        await res.Content.ReadFromJsonAsync<JsonElement>();
 }

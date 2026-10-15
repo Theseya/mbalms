@@ -67,9 +67,11 @@ describe('LoginPage', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByRole('heading', { name: 'Вход в кабинет' })).toBeInTheDocument()
+    expect(screen.getByText('LMS ДПО')).toBeInTheDocument()
 
     await userEvent.selectOptions(screen.getByLabelText('Язык'), 'en')
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.getByText('LMS ДПО')).toBeInTheDocument()
     expect(document.documentElement.lang).toBe('en')
 
     act(() => setLanguage('ru'))

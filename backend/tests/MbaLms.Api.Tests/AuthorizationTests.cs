@@ -20,7 +20,15 @@ namespace MbaLms.Api.Tests;
 /// </summary>
 public partial class AuthorizationTests(ApiFactory factory) : TestBase(factory)
 {
-    private static readonly string[] PublicEndpoints = ["GET api/auth/csrf", "POST api/auth/login", "GET health"];
+    /// <summary>
+    /// The complete allow-list. Password recovery and invite completion are public because the user has no session yet;
+    /// they stay behind antiforgery, rate limiting and the one-time Identity token.
+    /// </summary>
+    private static readonly string[] PublicEndpoints =
+    [
+        "GET api/auth/csrf", "POST api/auth/login", "GET health",
+        "POST api/auth/forgot-password", "POST api/auth/set-password",
+    ];
 
     private record Endpoint(string Method, string Pattern, bool AllowsAnonymous)
     {
@@ -59,10 +67,27 @@ public partial class AuthorizationTests(ApiFactory factory) : TestBase(factory)
     }
 
     [Fact]
-    public void Only_login_csrf_and_health_are_public()
+    public void Only_login_csrf_health_and_password_recovery_are_public()
     {
         var anonymous = Endpoints().Where(e => e.AllowsAnonymous).Select(e => e.ToString()).Order();
         Assert.Equal(PublicEndpoints.Order(), anonymous);
+    }
+
+    [Fact]
+    public async Task Public_state_changing_endpoints_require_csrf_token()
+    {
+        var http = NewClient().Http;
+        var failures = new List<string>();
+        foreach (var endpoint in Endpoints().Where(e => e.AllowsAnonymous && e.Method != "GET"))
+        {
+            var res = await http.SendAsync(new HttpRequestMessage(new HttpMethod(endpoint.Method), endpoint.Url)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            });
+            var code = res.StatusCode == HttpStatusCode.BadRequest ? await res.ErrorCodeAsync() : null;
+            if (code != "csrf_failed") failures.Add($"{endpoint} -> {(int)res.StatusCode} {code}");
+        }
+        Assert.Empty(failures);
     }
 
     [Fact]

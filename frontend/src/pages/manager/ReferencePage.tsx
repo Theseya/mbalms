@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../../api/client'
 import type { Discipline, Period, Teacher } from '../../api/types'
@@ -9,6 +9,7 @@ import {
 import { formatLocalDate } from '../../lib/format'
 import { PAGE_SIZE, matchesSearch, pageOf } from '../../lib/paging'
 import { useConfirm } from '../../lib/useConfirm'
+import { DisciplineProgramSection } from './DisciplineProgramSection'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
@@ -42,6 +43,8 @@ interface ReferenceConfig<T> {
   itemName: (item: T) => string
   searchValues: (item: T) => (string | null | undefined)[]
   searchPlaceholder?: string
+  /** Extra block in the edit dialog below the form, e.g. attached documents; `item` is null when creating. */
+  editExtra?: (item: T | null, onChanged: () => void) => ReactNode
 }
 
 type Values = Record<string, string>
@@ -49,7 +52,7 @@ type Values = Record<string, string>
 function ReferencePage<T extends { id: string }>({ config }: { config: ReferenceConfig<T> }) {
   const { t } = useTranslation()
   const list = useLoad(() => api.get<T[]>(config.endpoint), config.endpoint)
-  const [editing, setEditing] = useState<{ id: string | null; values: Values } | null>(null)
+  const [editing, setEditing] = useState<{ id: string | null; item: T | null; values: Values } | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
@@ -68,7 +71,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
     if (item) {
       for (const f of config.fields) values[f.name] = String((item as Record<string, unknown>)[f.name] ?? '')
     }
-    setEditing({ id: item?.id ?? null, values })
+    setEditing({ id: item?.id ?? null, item: item ?? null, values })
   }
 
   const onSubmit = async (e: FormEvent) => {
@@ -152,7 +155,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
       <Pagination page={shown.page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} />
 
       {editing && (
-        <Modal title={editing.id ? config.editLabel : config.newLabel} onClose={() => setEditing(null)}>
+        <Modal title={editing.id ? config.editLabel : config.newLabel} onClose={() => setEditing(null)} wide={!!config.editExtra}>
           <form onSubmit={onSubmit} noValidate>
             <ErrorBanner error={error} />
             {config.fields.map((f) => (
@@ -173,6 +176,7 @@ function ReferencePage<T extends { id: string }>({ config }: { config: Reference
             ))}
             <FormActions saving={saving} onCancel={() => setEditing(null)} />
           </form>
+          {config.editExtra?.(editing.item, list.reload)}
         </Modal>
       )}
       {dialog}
@@ -245,9 +249,11 @@ export function DisciplinesPage() {
         columns: [
           { label: t('common.name'), value: (x) => x.name },
           { label: t('common.description'), value: (x) => x.description ?? '—' },
+          { label: t('syllabus.column'), value: (x) => x.program?.fileName ?? '—' },
         ],
         itemName: (x) => x.name,
         searchValues: (x) => [x.name, x.description],
+        editExtra: (item, onChanged) => <DisciplineProgramSection discipline={item} onChanged={onChanged} />,
       }}
     />
   )

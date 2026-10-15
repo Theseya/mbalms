@@ -4,13 +4,16 @@ using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Infrastructure.Import;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace MbaLms.Api.Controllers.Manager;
 
 [Route("api/manager/imports/grades")]
-public class GradesImportController(AppDbContext db, CurrentUser current, ImportSessionStore sessions, AppTime time)
+public class GradesImportController(
+    AppDbContext db, CurrentUser current, ImportSessionStore sessions, AppTime time,
+    ChangeLogWriter changeLog, UserManager<AppUser> users)
     : ManagerControllerBase(db)
 {
     public const string Entity = "grades";
@@ -199,8 +202,16 @@ public class GradesImportController(AppDbContext db, CurrentUser current, Import
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
+            var actorEmail = await ActorEmailAsync();
+            var studentsById = students.ToDictionary(s => s.Id);
+            var disciplinesById = disciplines.ToDictionary(d => d.Id);
+            var periodsById = periods.ToDictionary(p => p.Id);
+
             foreach (var (row, studentId, disciplineId, periodId) in plannedCreates)
             {
+                var student = studentsById[studentId];
+                var discipline = disciplinesById[disciplineId];
+                var period = periodsById[periodId];
                 var grade = new Grade
                 {
                     Id = Guid.CreateVersion7(),
@@ -209,15 +220,31 @@ public class GradesImportController(AppDbContext db, CurrentUser current, Import
                     PeriodId = periodId,
                     Value = row.Value,
                     Status = GradeStatus.Draft,
-                    UpdatedAt = time.UtcNow
+                    UpdatedAt = time.UtcNow,
+                    Student = student,
+                    Discipline = discipline,
+                    Period = period
                 };
                 Db.Grades.Add(grade);
                 Record(grade, GradeChangeAction.Created, null, null);
+                var snap = GradeChangeLog.From(grade);
+                changeLog.Add(
+                    ChangeLogEntityType.Grade, grade.Id, ChangeLogAction.Created,
+                    GradeChangeLog.ForCreate(snap),
+                    GradeChangeLog.Context(snap, actorEmail, GradeChangeLog.SourceExcelImport));
             }
 
             foreach (var (row, entity) in plannedUpdates)
             {
+                entity.Student ??= studentsById[entity.StudentId];
+                entity.Discipline ??= disciplinesById[entity.DisciplineId];
+                entity.Period ??= periodsById[entity.PeriodId];
                 Record(entity, GradeChangeAction.Updated, entity.Value, entity.Status, newValue: row.Value);
+                var snap = GradeChangeLog.From(entity);
+                changeLog.Add(
+                    ChangeLogEntityType.Grade, entity.Id, ChangeLogAction.Updated,
+                    GradeChangeLog.ForValueUpdate(),
+                    GradeChangeLog.Context(snap, actorEmail, GradeChangeLog.SourceExcelImport));
                 entity.Value = row.Value;
                 entity.UpdatedAt = time.UtcNow;
                 // Stay Draft; never publish or notify.
@@ -365,6 +392,11 @@ public class GradesImportController(AppDbContext db, CurrentUser current, Import
             ChangedAt = time.UtcNow
         });
 
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
+    }
     private static void MarkConflict(GradeImportRow row, string field, string code)
     {
         row.Action = ImportRowAction.Conflict;

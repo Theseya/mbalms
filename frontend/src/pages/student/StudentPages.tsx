@@ -2,8 +2,11 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../../api/client'
-import type { AppNotification, Dashboard, StudentGrade, StudentLesson, StudentSurveyListItem } from '../../api/types'
+import type {
+  AppNotification, Dashboard, StudentAnnouncement, StudentGrade, StudentLesson, StudentProgram, StudentSurveyListItem,
+} from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
+import { ProgramViewButton } from '../../components/ProgramViewer'
 import { SurveyCardMascot, SurveyMascot } from '../../components/SurveyMascot'
 import { Badge, Empty, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatInstant, formatLocalDate, formatLocalDateTime, formatLocalTime, getAppTimeZone } from '../../lib/format'
@@ -11,7 +14,13 @@ import { notificationText } from '../../lib/labels'
 import { notifyUnreadChanged } from '../../lib/unread'
 import { toApiError, useLoad } from '../../lib/useLoad'
 
-function LessonCard({ lesson, highlight }: { lesson: StudentLesson; highlight?: boolean }) {
+/** Programme file names by discipline id; a failed load only hides the «Просмотреть ПУД» buttons. */
+function useProgramNames(): Map<string, string> {
+  const programs = useLoad(() => api.get<StudentProgram[]>('/api/student/programs'), 'programs')
+  return useMemo(() => new Map((programs.data ?? []).map((p) => [p.disciplineId, p.fileName])), [programs.data])
+}
+
+function LessonCard({ lesson, highlight, programName }: { lesson: StudentLesson; highlight?: boolean; programName?: string }) {
   const { t } = useTranslation()
   const isLink = lesson.location?.startsWith('http://') || lesson.location?.startsWith('https://')
   const cancelled = lesson.status === 'Cancelled'
@@ -30,6 +39,9 @@ function LessonCard({ lesson, highlight }: { lesson: StudentLesson; highlight?: 
           : <span>{lesson.location}</span>)}
       </p>
       {lesson.comment && <p className="comment">{lesson.comment}</p>}
+      {programName && (
+        <p className="lesson-actions"><ProgramViewButton disciplineId={lesson.disciplineId} fileName={programName} /></p>
+      )}
     </article>
   )
 }
@@ -39,6 +51,7 @@ export function StudentHomePage() {
   const { me } = useAuth()
   const dash = useLoad(() => api.get<Dashboard>('/api/student/dashboard'), 'dash')
   const surveys = useLoad(() => api.get<StudentSurveyListItem[]>('/api/student/surveys'), 'surveys')
+  const programs = useProgramNames()
 
   if (dash.error) return <ErrorBanner error={dash.error} />
   if (!dash.data) return <Loading />
@@ -64,7 +77,7 @@ export function StudentHomePage() {
       <div className="dashboard-grid">
         <section>
           <h2>{t('studentHome.nextLesson')}</h2>
-          {d.nextLesson ? <LessonCard lesson={d.nextLesson} highlight /> : <Empty>{t('studentHome.noNextLesson')}</Empty>}
+          {d.nextLesson ? <LessonCard lesson={d.nextLesson} highlight programName={programs.get(d.nextLesson.disciplineId)} /> : <Empty>{t('studentHome.noNextLesson')}</Empty>}
           {d.upcomingLessons.length > 1 && (
             <>
               <h3>{t('studentHome.upcoming')}</h3>
@@ -91,14 +104,60 @@ export function StudentHomePage() {
           )}
           <Link to="/student/grades">{t('studentHome.allGrades')} →</Link>
         </section>
+
+        <section>
+          <h2>{t('studentHome.announcements')}</h2>
+          {d.recentAnnouncements.length === 0 ? <Empty>{t('studentHome.noAnnouncements')}</Empty> : (
+            <ul className="plain-list announcement-preview-list">
+              {d.recentAnnouncements.map((a) => (
+                <li key={a.id}>
+                  <Link to={`/student/announcements#${a.id}`}>
+                    {a.isPinned && <Badge tone="blue">{t('announcements.pinned')}</Badge>}{' '}
+                    <strong>{a.title}</strong>
+                  </Link>
+                  <small className="muted block">{formatInstant(a.publishedAt)}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link to="/student/announcements">{t('studentHome.allAnnouncements')} →</Link>
+        </section>
       </div>
     </div>
+  )
+}
+
+export function StudentAnnouncementsPage() {
+  const { t } = useTranslation()
+  const list = useLoad(() => api.get<StudentAnnouncement[]>('/api/student/announcements'), 'announcements')
+  return (
+    <>
+      <div className="layout-fluid" hidden />
+      <PageHeader title={t('studentAnnouncements.title')} />
+      <ErrorBanner error={list.error} />
+      {list.loading && !list.data ? <Loading /> : !list.data?.length ? <Empty>{t('studentAnnouncements.empty')}</Empty> : (
+        <div className="announcement-list">
+          {list.data.map((a) => (
+            <article key={a.id} id={a.id} className="card announcement-card">
+              <p className="muted">
+                {a.isPinned && <Badge tone="blue">{t('announcements.pinned')}</Badge>}
+                {a.isPinned && ' · '}
+                {formatInstant(a.publishedAt)}
+              </p>
+              <h2>{a.title}</h2>
+              <p className="announcement-body">{a.body}</p>
+            </article>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
 export function StudentSchedulePage() {
   const { t } = useTranslation()
   const lessons = useLoad(() => api.get<StudentLesson[]>('/api/student/schedule'), 'schedule')
+  const programs = useProgramNames()
   const [showPast, setShowPast] = useState(false)
   const [now] = useState(() => Date.now())
   const { upcoming, past } = useMemo(() => {
@@ -126,7 +185,9 @@ export function StudentSchedulePage() {
       <ErrorBanner error={lessons.error} />
       {lessons.loading && !lessons.data ? <Loading /> : shown.length === 0 ? <Empty>{t('schedule.noLessons')}</Empty> : (
         <div className="lesson-list">
-          {shown.map((l, i) => <LessonCard key={l.id} lesson={l} highlight={!showPast && i === 0} />)}
+          {shown.map((l, i) => (
+            <LessonCard key={l.id} lesson={l} highlight={!showPast && i === 0} programName={programs.get(l.disciplineId)} />
+          ))}
         </div>
       )}
     </>
@@ -136,6 +197,7 @@ export function StudentSchedulePage() {
 export function StudentGradesPage() {
   const { t } = useTranslation()
   const grades = useLoad(() => api.get<StudentGrade[]>('/api/student/grades'), 'grades')
+  const programs = useProgramNames()
   return (
     <>
       <div className="layout-fluid" hidden />
@@ -155,7 +217,14 @@ export function StudentGradesPage() {
             <tbody>
               {grades.data.map((g) => (
                 <tr key={g.id}>
-                  <td data-label={t('common.discipline')}>{g.disciplineName}</td>
+                  <td data-label={t('common.discipline')}>
+                    {g.disciplineName}
+                    {programs.has(g.disciplineId) && (
+                      <span className="program-inline">
+                        <ProgramViewButton disciplineId={g.disciplineId} fileName={programs.get(g.disciplineId)} />
+                      </span>
+                    )}
+                  </td>
                   <td data-label={t('common.period')}>{g.periodName}</td>
                   <td data-label={t('grades.valueShort')} className="num"><strong className="grade">{g.value}</strong></td>
                   <td data-label={t('grades.publishedAt')}>{formatInstant(g.publishedAt)}</td>

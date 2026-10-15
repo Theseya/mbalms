@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,7 +19,9 @@ public record GroupRequest(
 public enum GroupFilter { Active, Archived, All }
 
 [Route("api/manager/groups")]
-public class GroupsController(AppDbContext db, AppTime time) : ManagerControllerBase(db)
+public class GroupsController(
+    AppDbContext db, AppTime time, ChangeLogWriter changeLog,
+    UserManager<AppUser> users, CurrentUser current) : ManagerControllerBase(db)
 {
     [HttpGet]
     public async Task<List<GroupDto>> List([FromQuery] GroupFilter status = GroupFilter.Active, CancellationToken ct = default)
@@ -57,6 +60,10 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
             StartDate = request.StartDate,
             EndDate = request.EndDate
         };
+        var snap = GroupChangeLog.From(group);
+        changeLog.Add(
+            ChangeLogEntityType.Group, group.Id, ChangeLogAction.Created,
+            GroupChangeLog.ForCreate(snap), GroupChangeLog.Context(snap, await ActorEmailAsync()));
         Db.Groups.Add(group);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = group.Id }, await Get(group.Id, ct));
@@ -67,9 +74,18 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
     {
         var group = await Db.Groups.FindAsync([id], ct) ?? throw AppException.NotFound();
         await ValidateAsync(request, id, ct);
+        var before = GroupChangeLog.From(group);
         group.Name = request.Name.Trim();
         group.StartDate = request.StartDate;
         group.EndDate = request.EndDate;
+        var after = GroupChangeLog.From(group);
+        var changes = GroupChangeLog.Diff(before, after);
+        if (changes.Count == 0)
+            return await Get(id, ct);
+
+        changeLog.Add(
+            ChangeLogEntityType.Group, group.Id, ChangeLogAction.Updated,
+            changes, GroupChangeLog.Context(after, await ActorEmailAsync()));
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -80,8 +96,13 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
     {
         var group = await Db.Groups.FindAsync([id], ct) ?? throw AppException.NotFound();
         if (group.Status == GroupStatus.Archived) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
+        var before = GroupChangeLog.From(group);
         group.Status = GroupStatus.Archived;
         group.ArchivedAt = time.UtcNow;
+        var after = GroupChangeLog.From(group);
+        changeLog.Add(
+            ChangeLogEntityType.Group, group.Id, ChangeLogAction.Updated,
+            GroupChangeLog.Diff(before, after), GroupChangeLog.Context(after, await ActorEmailAsync()));
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -91,8 +112,13 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
     {
         var group = await Db.Groups.FindAsync([id], ct) ?? throw AppException.NotFound();
         if (group.Status == GroupStatus.Active) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
+        var before = GroupChangeLog.From(group);
         group.Status = GroupStatus.Active;
         group.ArchivedAt = null;
+        var after = GroupChangeLog.From(group);
+        changeLog.Add(
+            ChangeLogEntityType.Group, group.Id, ChangeLogAction.Updated,
+            GroupChangeLog.Diff(before, after), GroupChangeLog.Context(after, await ActorEmailAsync()));
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -104,8 +130,13 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
         var group = await Db.Groups.FindAsync([id], ct) ?? throw AppException.NotFound();
         var hasData = await Db.Students.AnyAsync(s => s.GroupId == id, ct)
                       || await Db.Lessons.AnyAsync(l => l.GroupId == id, ct)
-                      || await Db.Surveys.AnyAsync(s => s.GroupId == id, ct);
+                      || await Db.Surveys.AnyAsync(s => s.GroupId == id, ct)
+                      || await Db.WorkSheets.AnyAsync(s => s.GroupId == id, ct);
         if (hasData) throw AppException.Conflict(ErrorCodes.InUse);
+        var snap = GroupChangeLog.From(group);
+        changeLog.Add(
+            ChangeLogEntityType.Group, group.Id, ChangeLogAction.Deleted,
+            GroupChangeLog.ForDelete(snap), GroupChangeLog.Context(snap, await ActorEmailAsync()));
         Db.Groups.Remove(group);
         await Db.SaveChangesAsync(ct);
         return NoContent();
@@ -118,5 +149,11 @@ public class GroupsController(AppDbContext db, AppTime time) : ManagerController
         var name = r.Name.Trim();
         if (await Db.Groups.AnyAsync(g => g.Id != id && g.Name.ToLower() == name.ToLower(), ct))
             throw AppException.Validation(nameof(r.Name), ErrorCodes.Duplicate);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 }

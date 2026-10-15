@@ -2,3 +2,4 @@
 **/obj/
 tests/
 **/*.user
+**/App_Data/

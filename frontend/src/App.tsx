@@ -5,7 +5,13 @@ import { useAuth } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { Loading } from './components/ui'
 import { AccountPage } from './pages/AccountPage'
+import { DevMailPreviewPage } from './pages/DevMailPreviewPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { LoginPage } from './pages/LoginPage'
+import { SetPasswordPage } from './pages/SetPasswordPage'
+import { AnnouncementEditPage } from './pages/manager/AnnouncementEditPage'
+import { AnnouncementsPage } from './pages/manager/AnnouncementsPage'
+import { ChangeLogPage } from './pages/manager/ChangeLogPage'
 import { GradebookPage } from './pages/manager/GradebookPage'
 import { GradesPage } from './pages/manager/GradesPage'
 import { GroupsPage } from './pages/manager/GroupsPage'
@@ -18,8 +24,9 @@ import { SurveyResultsPage } from './pages/manager/SurveyResultsPage'
 import { SurveyTemplateEditPage } from './pages/manager/SurveyTemplateEditPage'
 import { SurveyTemplatesPage } from './pages/manager/SurveyTemplatesPage'
 import { SurveysPage } from './pages/manager/SurveysPage'
+import { WorkSheetPage } from './pages/manager/WorkSheetPage'
 import {
-  NotificationsPage, StudentGradesPage, StudentHomePage, StudentSchedulePage, StudentSurveysPage,
+  NotificationsPage, StudentAnnouncementsPage, StudentGradesPage, StudentHomePage, StudentSchedulePage, StudentSurveysPage,
 } from './pages/student/StudentPages'
 import { SurveyTakePage } from './pages/student/SurveyTakePage'
 
@@ -43,16 +50,20 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
       <Route element={<RequireRole><Layout /></RequireRole>}>
         <Route path="/account" element={<AccountPage />} />
         <Route path="/manager" element={<RequireRole role="Manager"><Navigate to="/manager/groups" replace /></RequireRole>} />
         <Route path="/manager/groups" element={<RequireRole role="Manager"><GroupsPage /></RequireRole>} />
         <Route path="/manager/students" element={<RequireRole role="Manager"><StudentsPage /></RequireRole>} />
+        <Route path="/dev/mail/:id" element={<RequireRole role="Manager"><DevMailPreviewPage /></RequireRole>} />
         <Route path="/manager/teachers" element={<RequireRole role="Manager"><TeachersPage /></RequireRole>} />
         <Route path="/manager/disciplines" element={<RequireRole role="Manager"><DisciplinesPage /></RequireRole>} />
         <Route path="/manager/periods" element={<RequireRole role="Manager"><PeriodsPage /></RequireRole>} />
         <Route path="/manager/schedule" element={<RequireRole role="Manager"><SchedulePage /></RequireRole>} />
         <Route path="/manager/grades" element={<RequireRole role="Manager"><GradesPage /></RequireRole>} />
+        <Route path="/manager/worksheet" element={<RequireRole role="Manager"><WorkSheetPage /></RequireRole>} />
         <Route path="/manager/gradebook" element={<RequireRole role="Manager"><GradebookPage /></RequireRole>} />
         <Route path="/manager/surveys" element={<RequireRole role="Manager"><SurveysPage /></RequireRole>} />
         <Route path="/manager/surveys/new" element={<RequireRole role="Manager"><SurveyEditPage /></RequireRole>} />
@@ -62,11 +73,16 @@ export default function App() {
         <Route path="/manager/survey-templates" element={<RequireRole role="Manager"><SurveyTemplatesPage /></RequireRole>} />
         <Route path="/manager/survey-templates/new" element={<RequireRole role="Manager"><SurveyTemplateEditPage /></RequireRole>} />
         <Route path="/manager/survey-templates/:id" element={<RequireRole role="Manager"><SurveyTemplateEditPage /></RequireRole>} />
+        <Route path="/manager/announcements" element={<RequireRole role="Manager"><AnnouncementsPage /></RequireRole>} />
+        <Route path="/manager/announcements/new" element={<RequireRole role="Manager"><AnnouncementEditPage /></RequireRole>} />
+        <Route path="/manager/announcements/:id" element={<RequireRole role="Manager"><AnnouncementEditPage /></RequireRole>} />
+        <Route path="/manager/change-log" element={<RequireRole role="Manager"><ChangeLogPage /></RequireRole>} />
         <Route path="/student" element={<RequireRole role="Student"><StudentHomePage /></RequireRole>} />
         <Route path="/student/schedule" element={<RequireRole role="Student"><StudentSchedulePage /></RequireRole>} />
         <Route path="/student/grades" element={<RequireRole role="Student"><StudentGradesPage /></RequireRole>} />
         <Route path="/student/surveys" element={<RequireRole role="Student"><StudentSurveysPage /></RequireRole>} />
         <Route path="/student/surveys/:id" element={<RequireRole role="Student"><SurveyTakePage /></RequireRole>} />
+        <Route path="/student/announcements" element={<RequireRole role="Student"><StudentAnnouncementsPage /></RequireRole>} />
         <Route path="/student/notifications" element={<RequireRole role="Student"><NotificationsPage /></RequireRole>} />
       </Route>
       <Route path="*" element={<Home />} />

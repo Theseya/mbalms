@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,7 +22,9 @@ public record SurveyTemplateRequest(
 
 [Route("api/manager/survey-templates")]
 [ApiController]
-public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerControllerBase(db)
+public class SurveyTemplatesController(
+    AppDbContext db, AppTime time, ChangeLogWriter changeLog, UserManager<AppUser> users, CurrentUser current)
+    : ManagerControllerBase(db)
 {
     [HttpGet]
     public async Task<List<SurveyTemplateListItemDto>> List(CancellationToken ct = default)
@@ -48,6 +51,11 @@ public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerC
             Title = r.Title
         };
         Apply(template, r);
+        var snap = SurveyTemplateChangeLog.SnapshotFrom(template);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.SurveyTemplate, template.Id, ChangeLogAction.Created,
+            SurveyTemplateChangeLog.ForCreate(snap), SurveyTemplateChangeLog.Context(snap, actorEmail));
         Db.SurveyTemplates.Add(template);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = template.Id }, await LoadDetail(Db, template.Id, ct));
@@ -60,6 +68,8 @@ public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerC
                            .FirstOrDefaultAsync(t => t.Id == id, ct)
                        ?? throw AppException.NotFound();
 
+        var before = SurveyTemplateChangeLog.SnapshotFrom(template);
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         Db.SurveyTemplateQuestions.RemoveRange(template.Questions);
         await Db.SaveChangesAsync(ct);
@@ -67,6 +77,17 @@ public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerC
         Apply(template, r);
         template.UpdatedAt = time.UtcNow;
         Db.SurveyTemplateQuestions.AddRange(template.Questions);
+
+        var after = SurveyTemplateChangeLog.SnapshotFrom(template);
+        var changes = SurveyTemplateChangeLog.Diff(before, after);
+        if (changes.Count > 0)
+        {
+            var actorEmail = await ActorEmailAsync();
+            changeLog.Add(
+                ChangeLogEntityType.SurveyTemplate, template.Id, ChangeLogAction.Updated,
+                changes, SurveyTemplateChangeLog.Context(after, actorEmail));
+        }
+
         await Db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await LoadDetail(Db, id, ct);
@@ -75,8 +96,14 @@ public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerC
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var template = await Db.SurveyTemplates.FirstOrDefaultAsync(t => t.Id == id, ct)
+        var template = await Db.SurveyTemplates.Include(t => t.Questions).ThenInclude(q => q.Options)
+                           .FirstOrDefaultAsync(t => t.Id == id, ct)
                        ?? throw AppException.NotFound();
+        var snap = SurveyTemplateChangeLog.SnapshotFrom(template);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.SurveyTemplate, template.Id, ChangeLogAction.Deleted,
+            SurveyTemplateChangeLog.ForDelete(snap), SurveyTemplateChangeLog.Context(snap, actorEmail));
         Db.SurveyTemplates.Remove(template);
         await Db.SaveChangesAsync(ct);
         return NoContent();
@@ -102,5 +129,11 @@ public class SurveyTemplatesController(AppDbContext db, AppTime time) : ManagerC
         var questions = r.Questions ?? [];
         for (var i = 0; i < questions.Count; i++)
             template.Questions.Add(SurveyQuestionBuilder.BuildTemplateQuestion(questions[i], i, $"questions[{i}]"));
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 }

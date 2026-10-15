@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using MbaLms.Api.Infrastructure.Email;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -19,6 +20,16 @@ public record ChangePasswordRequest(
     [Required(ErrorMessage = FieldCodes.Required)] string CurrentPassword,
     [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string NewPassword);
 
+public record ForgotPasswordRequest(
+    [Required(ErrorMessage = FieldCodes.Required)] [EmailAddress(ErrorMessage = FieldCodes.Email)]
+    [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string Email);
+
+public record SetPasswordRequest(
+    [Required(ErrorMessage = FieldCodes.Required)] [EmailAddress(ErrorMessage = FieldCodes.Email)]
+    [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string Email,
+    [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(2048, ErrorMessage = FieldCodes.MaxLength)] string Token,
+    [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string NewPassword);
+
 public record MeDto(Guid Id, string Email, string Role, string DisplayName, string? GroupName, string TimeZone);
 
 public record CsrfDto(string Token);
@@ -30,7 +41,9 @@ public class AuthController(
     UserManager<AppUser> users,
     IAntiforgery antiforgery,
     AppDbContext db,
-    AppTime time) : ControllerBase
+    AppTime time,
+    IEmailSender emailSender,
+    PasswordSetupLinkService passwordLinks) : ControllerBase
 {
     private static readonly AppUser DummyUser = new();
     private static readonly Lazy<string> DummyHash =
@@ -101,6 +114,56 @@ public class AuthController(
             throw AppException.Validation(field, code);
         }
         await signIn.RefreshSignInAsync(user);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// When mail is configured: always No Content (does not reveal whether the email is registered).
+    /// When mail is not configured: 503 <see cref="ErrorCodes.MailNotConfigured"/> — never pretend the letter was sent.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-mail")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken ct)
+    {
+        if (!emailSender.IsConfigured)
+            throw AppException.ServiceUnavailable(ErrorCodes.MailNotConfigured);
+
+        var email = request.Email.Trim();
+        var user = await users.FindByEmailAsync(email);
+        if (user is not null)
+        {
+            var (_, setupUrl) = await passwordLinks.CreateResetLinkAsync(user);
+            await emailSender.SendAsync(PasswordEmailComposer.PasswordReset(email, setupUrl), ct);
+        }
+        else
+        {
+            // Same hashing cost as a failed login probe — avoid timing that reveals registration.
+            users.PasswordHasher.VerifyHashedPassword(DummyUser, DummyHash.Value, Guid.NewGuid().ToString());
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Sets a new password using a one-time Identity reset token (invite or forgot-password).</summary>
+    [HttpPost("set-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("password-mail")]
+    public async Task<IActionResult> SetPassword(SetPasswordRequest request)
+    {
+        var email = request.Email.Trim();
+        var user = await users.FindByEmailAsync(email);
+        if (user is null)
+            throw AppException.BadRequest(ErrorCodes.InvalidPasswordToken);
+
+        var result = await users.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            if (result.Errors.Any(e => e.Code.StartsWith("Password", StringComparison.Ordinal)))
+                throw AppException.Validation(nameof(request.NewPassword), FieldCodes.PasswordWeak);
+            throw AppException.BadRequest(ErrorCodes.InvalidPasswordToken);
+        }
+
         return NoContent();
     }
 

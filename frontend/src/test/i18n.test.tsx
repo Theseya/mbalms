@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import errorsCs from '../../../backend/src/MbaLms.Api/Infrastructure/Errors.cs?raw'
 import enumsCs from '../../../backend/src/MbaLms.Api/Domain/Enums.cs?raw'
-import gradesCs from '../../../backend/src/MbaLms.Api/Controllers/Manager/GradesController.cs?raw'
+import gradesCs from '../../../backend/src/MbaLms.Api/Controllers/Manager/GradeWriter.cs?raw'
 import lessonsCs from '../../../backend/src/MbaLms.Api/Controllers/Manager/LessonsController.cs?raw'
 import type {
   AppNotification, Dashboard, Discipline, Grade, Group, Lesson, Me, Period, Student, StudentGrade, StudentLesson,
@@ -122,6 +122,35 @@ describe('localization resources', () => {
     expect(values.filter((v) => typeof lookup(ru, `${prefix}.${v}`) !== 'string')).toEqual([])
   })
 
+  it('translates every ChangeLogEntityType for object labels and type filter (RU/EN)', () => {
+    const values = csEnum(enumsCs, 'ChangeLogEntityType')
+    expect(values).toEqual(expect.arrayContaining([
+      'Announcement', 'Lesson', 'Survey', 'SurveyTemplate', 'Grade',
+      'Group', 'Discipline', 'AcademicPeriod', 'Teacher', 'Student',
+    ]))
+    expect(values.length).toBeGreaterThanOrEqual(10)
+    for (const v of values) {
+      expect(typeof lookup(ru, `changeLog.entityTypes.${v}`)).toBe('string')
+      expect(typeof lookup(en, `changeLog.entityTypes.${v}`)).toBe('string')
+      expect(typeof lookup(ru, `changeLog.filterEntityTypes.${v}`)).toBe('string')
+      expect(typeof lookup(en, `changeLog.filterEntityTypes.${v}`)).toBe('string')
+      expect(String(lookup(ru, `changeLog.entityTypes.${v}`))).not.toMatch(/^changeLog\./)
+      expect(String(lookup(en, `changeLog.entityTypes.${v}`))).not.toMatch(/^changeLog\./)
+    }
+    expect(lookup(ru, 'changeLog.filterEntityTypes.all')).toBe('Все типы')
+    expect(lookup(en, 'changeLog.filterEntityTypes.all')).toBe('All types')
+    for (const field of ['lastName', 'firstName', 'middleName', 'email']) {
+      expect(typeof lookup(ru, `changeLog.fields.${field}`)).toBe('string')
+      expect(typeof lookup(en, `changeLog.fields.${field}`)).toBe('string')
+    }
+    for (const key of ['emailSet', 'emailChanged', 'emailCleared']) {
+      expect(typeof lookup(ru, `changeLog.${key}`)).toBe('string')
+      expect(typeof lookup(en, `changeLog.${key}`)).toBe('string')
+      expect(String(lookup(ru, `changeLog.${key}`))).not.toMatch(/→/)
+      expect(String(lookup(en, `changeLog.${key}`))).not.toMatch(/→/)
+    }
+  })
+
   it('has a text for every notification type and change sent by the API', () => {
     expect(csEnum(enumsCs, 'NotificationType').sort()).toEqual(['GradePublished', 'ScheduleChanged', 'SurveyAssigned'])
     for (const change of ['created', 'updated', 'deleted', 'cancelled']) {
@@ -157,10 +186,12 @@ describe('language selection', () => {
     act(() => setLanguage('ru'))
     render(<MemoryRouter><AuthProvider><LoginPage /></AuthProvider></MemoryRouter>)
     expect(screen.getByRole('heading', { name: 'Вход в кабинет' })).toBeInTheDocument()
+    expect(screen.getByText('LMS ДПО')).toBeInTheDocument()
 
     await userEvent.selectOptions(screen.getByLabelText('Язык'), 'en')
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.getByText('LMS ДПО')).toBeInTheDocument()
     expect(screen.getByLabelText(/^Password/)).toBeInTheDocument()
     expect(document.documentElement.lang).toBe('en')
     expect(localStorage.getItem(STORAGE_KEY)).toBe('en')
@@ -222,13 +253,13 @@ describe('pages in English', () => {
     ],
   }
   const studentLesson: StudentLesson = {
-    id: 'l1', disciplineName: 'Corporate Finance', teacherName: 'Brown Tom', ...times, format: 'Hybrid', location: 'Room 1', comment: 'Bring a laptop', status: 'Scheduled',
+    id: 'l1', disciplineId: 'd1', disciplineName: 'Corporate Finance', teacherName: 'Brown Tom', ...times, format: 'Hybrid', location: 'Room 1', comment: 'Bring a laptop', status: 'Scheduled',
   }
-  const studentGrade: StudentGrade = { id: 'gr1', disciplineName: 'Corporate Finance', periodName: 'Term 1', value: 85, publishedAt: '2026-10-01T09:00:00Z' }
+  const studentGrade: StudentGrade = { id: 'gr1', disciplineId: 'd1', disciplineName: 'Corporate Finance', periodName: 'Term 1', value: 85, publishedAt: '2026-10-01T09:00:00Z' }
   const studentSurvey: StudentSurveyDetail = {
     ...surveyBase, submitted: false, submittedAt: null, canRespond: true, description: null, questions, myAnswers: [],
   }
-  const dashboard: Dashboard = { nextLesson: studentLesson, upcomingLessons: [studentLesson], pendingSurveys: 1, unreadNotifications: 2, recentGrades: [studentGrade] }
+  const dashboard: Dashboard = { nextLesson: studentLesson, upcomingLessons: [studentLesson], pendingSurveys: 1, unreadNotifications: 2, recentGrades: [studentGrade], recentAnnouncements: [] }
   const notifications: AppNotification[] = [
     { id: 'n1', type: 'SurveyAssigned', payload: { surveyId: 'sv1', title: 'Course feedback' }, createdAt: '2026-10-02T09:00:00Z', readAt: null },
     { id: 'n2', type: 'ScheduleChanged', payload: { lessonId: 'l1', disciplineName: 'Corporate Finance', startsAtLocal: times.startsAtLocal, change: 'cancelled' }, createdAt: '2026-10-02T08:00:00Z', readAt: null },
@@ -276,6 +307,7 @@ describe('pages in English', () => {
     ['/manager/schedule', manager],
     ['/manager/grades', manager],
     ['/manager/gradebook', manager],
+    ['/manager/worksheet', manager],
     ['/manager/surveys', manager],
     ['/manager/surveys/new', manager],
     ['/manager/surveys/sv1', manager],
@@ -301,7 +333,7 @@ describe('pages in English', () => {
     await screen.findByRole('heading', { level: 1 })
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    const html = document.body.innerHTML
+    const html = document.body.innerHTML.replaceAll(en.app.title, '')
     expect(html.match(/[А-Яа-яЁё]+/g)).toBeNull()
     expect(html.match(rawKey)).toBeNull()
   })

@@ -8,6 +8,10 @@ export type SurveyType = 'TeachingEvaluation' | 'ServiceSurvey'
 export type SurveyStatus = 'Draft' | 'Open' | 'Closed'
 export type QuestionType = 'Scale' | 'SingleChoice' | 'Text'
 export type NotificationType = 'SurveyAssigned' | 'ScheduleChanged' | 'GradePublished'
+export type AnnouncementStatus = 'Draft' | 'Published' | 'Unpublished'
+export type ChangeLogAction = 'Created' | 'Updated' | 'Published' | 'Unpublished' | 'Deleted' | 'Opened' | 'Closed'
+export type ChangeLogEntityType = 'Announcement' | 'Lesson' | 'Survey' | 'SurveyTemplate' | 'Grade' | 'Group' | 'Discipline' | 'AcademicPeriod' | 'Teacher' | 'Student'
+  | 'WorkSheet' | 'AssessmentElement' | 'AssessmentCategory'
 
 /** Wall-clock date-time in the application time zone, e.g. "2026-10-05T10:00:00". */
 export type LocalDateTime = string
@@ -68,10 +72,17 @@ export interface Teacher {
   email: string | null
 }
 
+export interface DisciplineProgram {
+  fileName: string
+  sizeBytes: number
+  uploadedAt: Instant
+}
+
 export interface Discipline {
   id: string
   name: string
   description: string | null
+  program?: DisciplineProgram | null
 }
 
 export interface Period {
@@ -145,6 +156,135 @@ export interface GradeSheet {
   periodId: string
   periodName: string
   rows: GradeSheetRow[]
+}
+
+export type AssessmentCategoryKind = 'Manual' | 'Attendance'
+export type CalculationMode = 'Weighted' | 'Average'
+
+export interface AssessmentWork {
+  id: string
+  name: string
+  /** Filled-in scores in all working sheets of the discipline; deleted together with the work. */
+  scoreCount: number
+}
+
+export interface AssessmentCategory {
+  id: string
+  name: string
+  weight: number
+  kind: AssessmentCategoryKind
+  includeInAverage: boolean
+  legacyManualAttendance: boolean
+  works: AssessmentWork[]
+}
+
+export interface AssessmentSettings {
+  disciplineId: string
+  disciplineName: string
+  attendanceThreshold: number | null
+  attendanceWeight: number
+  calculationMode: CalculationMode
+  includeAttendanceInAverage: boolean
+  averageTerms: string[]
+  categories: AssessmentCategory[]
+  weightTotal: number
+  weightsComplete: boolean
+  readyForTransfer: boolean
+}
+
+export type CalculationState = 'Calculated' | 'NoElements' | 'WeightsIncomplete' | 'MissingScores'
+export type AttendanceStatus = 'Unknown' | 'Met' | 'NotMet'
+
+export interface WorkSheetRow {
+  studentId: string
+  studentName: string
+  /** False for a student who has left the group: the row is read-only. */
+  inGroup: boolean
+  currentGroupName: string | null
+  /** Work id → score; a missing work is empty, not zero. */
+  scores: Record<string, number>
+  categoryScores: Record<string, number | null>
+  attendedLessons: number | null
+  attendancePercent: number | null
+  attendanceScore: number | null
+  attendanceContribution: number | null
+  attendanceStatus: AttendanceStatus
+  calculationState: CalculationState
+  missingCount: number
+  calculatedRaw: number | null
+  calculatedRounded: number | null
+  manualFinal: number | null
+  final: number | null
+  transferredFinal: number | null
+  transferredAt: Instant | null
+  grade: { id: string; value: number; status: GradeStatus } | null
+}
+
+export interface WorkSheet {
+  id: string | null
+  groupId: string
+  groupName: string
+  groupStatus: GroupStatus
+  disciplineId: string
+  disciplineName: string
+  periodId: string
+  periodName: string
+  totalLessons: number | null
+  attendanceThreshold: number | null
+  attendanceWeight: number
+  calculationMode: CalculationMode
+  includeAttendanceInAverage: boolean
+  averageTerms: string[]
+  categories: {
+    id: string
+    name: string
+    weight: number
+    kind: AssessmentCategoryKind
+    includeInAverage: boolean
+    legacyManualAttendance: boolean
+    works: { id: string; name: string }[]
+  }[]
+  weightTotal: number
+  weightsComplete: boolean
+  readyForTransfer: boolean
+  hasTransfers: boolean
+  rows: WorkSheetRow[]
+}
+
+export interface WorkSheetSummary {
+  id: string
+  groupId: string
+  disciplineId: string
+  periodId: string
+  periodName: string
+  hasTransfers: boolean
+  updatedAt: string
+}
+
+export type TransferChange = 'New' | 'Changed' | 'Unchanged'
+export type TransferSkipReason = 'NoElements' | 'WeightsIncomplete' | 'MissingScores' | 'NotInGroup'
+
+export interface TransferPreview {
+  periodId: string
+  periodName: string
+  factor: number
+  items: {
+    studentId: string
+    studentName: string
+    final: number
+    manual: boolean
+    value: number
+    change: TransferChange
+    currentValue: number | null
+    currentStatus: GradeStatus | null
+  }[]
+  skipped: { studentId: string; studentName: string; reason: TransferSkipReason; missingCount: number }[]
+}
+
+export interface TransferResult {
+  created: number
+  updated: number
+  unchanged: number
 }
 
 export interface GradeHistoryEntry {
@@ -265,6 +405,7 @@ export interface StudentLesson {
   location: string | null
   comment: string | null
   status: LessonStatus
+  disciplineId: string
 }
 
 export interface StudentGrade {
@@ -273,6 +414,13 @@ export interface StudentGrade {
   periodName: string
   value: number
   publishedAt: Instant | null
+  disciplineId: string
+}
+
+export interface StudentProgram {
+  disciplineId: string
+  disciplineName: string
+  fileName: string
 }
 
 export interface StudentSurveyListItem {
@@ -308,6 +456,68 @@ export interface Dashboard {
   pendingSurveys: number
   unreadNotifications: number
   recentGrades: StudentGrade[]
+  recentAnnouncements: StudentAnnouncement[]
+}
+
+export interface AnnouncementGroupRef {
+  id: string
+  name: string
+  status: GroupStatus
+}
+
+export interface AnnouncementListItem {
+  id: string
+  title: string
+  status: AnnouncementStatus
+  isPinned: boolean
+  isExpired: boolean
+  createdAt: Instant
+  updatedAt: Instant
+  publishedAt: Instant | null
+  expiresAtLocal: LocalDateTime | null
+  groups: AnnouncementGroupRef[]
+}
+
+export interface AnnouncementDetail extends AnnouncementListItem {
+  body: string
+}
+
+export interface ChangeLogField {
+  field: string
+  old: unknown
+  new: unknown
+}
+
+export interface ChangeLogListItem {
+  id: string
+  occurredAt: Instant
+  actorUserId: string | null
+  actorEmail: string | null
+  actorIsSystem: boolean
+  actorMissing: boolean
+  action: ChangeLogAction
+  entityType: ChangeLogEntityType
+  entityId: string
+  entityTitle: string
+  entityExists: boolean
+  groupNames: string[]
+  source: string | null
+  changes: ChangeLogField[]
+}
+
+export interface ChangeLogAuthor {
+  id: string
+  email: string
+}
+
+export interface StudentAnnouncement {
+  id: string
+  title: string
+  body: string
+  isPinned: boolean
+  publishedAt: Instant
+  publishedAtLocal: LocalDateTime | null
+  expiresAtLocal: LocalDateTime | null
 }
 
 export interface AppNotification {

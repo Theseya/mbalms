@@ -19,6 +19,9 @@ coverage/
 # Backups
 backups/
 
+# Uploaded documents of local runs (Documents:StoragePath default)
+App_Data/
+
 # OS / editors
 .DS_Store
 Thumbs.db

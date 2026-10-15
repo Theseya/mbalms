@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -53,7 +54,9 @@ public record SurveyResponseDto(Guid Id, Guid StudentId, string StudentName, str
 public record SurveyAssignedPayload(Guid SurveyId, string Title, SurveyType SurveyType);
 
 [Route("api/manager/surveys")]
-public class SurveysController(AppDbContext db, AppTime time, NotificationService notifications) : ManagerControllerBase(db)
+public class SurveysController(
+    AppDbContext db, AppTime time, NotificationService notifications,
+    ChangeLogWriter changeLog, UserManager<AppUser> users, CurrentUser current) : ManagerControllerBase(db)
 {
     public const int ScaleLimit = SurveyQuestionBuilder.ScaleLimit;
     public const int MaxOptions = SurveyQuestionBuilder.MaxOptions;
@@ -102,6 +105,11 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
     {
         var survey = new Survey { Id = Guid.CreateVersion7(), Title = r.Title, CreatedAt = time.UtcNow };
         await ApplyAsync(survey, r, ct);
+        var snap = await SnapshotAsync(survey, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Created,
+            SurveyChangeLog.ForCreate(snap), SurveyChangeLog.Context(snap, actorEmail));
         Db.Surveys.Add(survey);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = survey.Id }, await Get(survey.Id, ct));
@@ -134,6 +142,12 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
 
         var survey = new Survey { Id = Guid.CreateVersion7(), Title = request.Title, CreatedAt = time.UtcNow };
         await ApplyAsync(survey, request, ct);
+        var snap = await SnapshotAsync(survey, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Created,
+            SurveyChangeLog.ForCreate(snap),
+            SurveyChangeLog.Context(snap, actorEmail, SurveyChangeLog.SourceFromTemplate));
         Db.Surveys.Add(survey);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = survey.Id }, await Get(survey.Id, ct));
@@ -164,6 +178,12 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
                 .Select((q, i) => SurveyQuestionBuilder.BuildTemplateQuestion(SurveyQuestionBuilder.ToRequest(q), i, $"questions[{i}]"))
                 .ToList()
         };
+        var snap = SurveyTemplateChangeLog.SnapshotFrom(template);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.SurveyTemplate, template.Id, ChangeLogAction.Created,
+            SurveyTemplateChangeLog.ForCreate(snap),
+            SurveyTemplateChangeLog.Context(snap, actorEmail, SurveyTemplateChangeLog.SourceFromSurvey));
         Db.SurveyTemplates.Add(template);
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(SurveyTemplatesController.Get), "SurveyTemplates", new { id = template.Id },
@@ -175,9 +195,12 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
     public async Task<SurveyDetailDto> Update(Guid id, SurveyRequest r, CancellationToken ct)
     {
         var survey = await Db.Surveys.Include(s => s.Questions).ThenInclude(q => q.Options)
+                         .Include(s => s.Group).Include(s => s.Teacher).Include(s => s.Discipline)
                          .FirstOrDefaultAsync(s => s.Id == id, ct)
                      ?? throw AppException.NotFound();
         if (survey.Status != SurveyStatus.Draft) throw AppException.Conflict(ErrorCodes.SurveyNotEditable);
+
+        var before = await SnapshotAsync(survey, ct);
 
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         Db.SurveyQuestions.RemoveRange(survey.Questions);
@@ -186,6 +209,17 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
         await ApplyAsync(survey, r, ct);
         // New questions carry client-side keys, so they must be marked as inserts explicitly.
         Db.SurveyQuestions.AddRange(survey.Questions);
+
+        var after = await SnapshotAsync(survey, ct);
+        var changes = SurveyChangeLog.Diff(before, after);
+        if (changes.Count > 0)
+        {
+            var actorEmail = await ActorEmailAsync();
+            changeLog.Add(
+                ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Updated,
+                changes, SurveyChangeLog.Context(after, actorEmail));
+        }
+
         await Db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await Get(id, ct);
@@ -197,13 +231,16 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
     [HttpPost("{id:guid}/open")]
     public async Task<SurveyDetailDto> Open(Guid id, CancellationToken ct)
     {
-        var survey = await Db.Surveys.Include(s => s.Questions).FirstOrDefaultAsync(s => s.Id == id, ct)
+        var survey = await Db.Surveys.Include(s => s.Questions)
+                         .Include(s => s.Group).Include(s => s.Teacher).Include(s => s.Discipline)
+                         .FirstOrDefaultAsync(s => s.Id == id, ct)
                      ?? throw AppException.NotFound();
         if (survey.Status == SurveyStatus.Open) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
         if (survey.Questions.Count == 0) throw AppException.Conflict(ErrorCodes.SurveyHasNoQuestions);
         if (survey.ClosesAt is not null && survey.ClosesAt <= time.UtcNow) throw AppException.Conflict(ErrorCodes.SurveyWindowEnded);
         await RequireActiveGroupAsync(survey.GroupId, "groupId", ct);
 
+        var oldStatus = survey.Status;
         survey.Status = SurveyStatus.Open;
         if (survey.PublishedAt is null)
         {
@@ -211,6 +248,14 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
             await notifications.NotifyGroupAsync(survey.GroupId, NotificationType.SurveyAssigned,
                 new SurveyAssignedPayload(survey.Id, survey.Title, survey.Type), ct);
         }
+
+        var snap = await SnapshotAsync(survey, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Opened,
+            SurveyChangeLog.StatusOnly(oldStatus, survey.Status),
+            SurveyChangeLog.Context(snap, actorEmail));
+
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -218,9 +263,21 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
     [HttpPost("{id:guid}/close")]
     public async Task<SurveyDetailDto> Close(Guid id, CancellationToken ct)
     {
-        var survey = await Db.Surveys.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
+        var survey = await Db.Surveys
+                         .Include(s => s.Group).Include(s => s.Teacher).Include(s => s.Discipline)
+                         .Include(s => s.Questions).ThenInclude(q => q.Options)
+                         .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
         if (survey.Status != SurveyStatus.Open) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
+        var oldStatus = survey.Status;
         survey.Status = SurveyStatus.Closed;
+
+        var snap = await SnapshotAsync(survey, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Closed,
+            SurveyChangeLog.StatusOnly(oldStatus, survey.Status),
+            SurveyChangeLog.Context(snap, actorEmail));
+
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -228,9 +285,19 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var survey = await Db.Surveys.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
+        var survey = await Db.Surveys
+                         .Include(s => s.Group).Include(s => s.Teacher).Include(s => s.Discipline)
+                         .Include(s => s.Questions).ThenInclude(q => q.Options)
+                         .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
         if (survey.Status != SurveyStatus.Draft || await Db.SurveyResponses.AnyAsync(r => r.SurveyId == id, ct))
             throw AppException.Conflict(ErrorCodes.SurveyNotEditable);
+
+        var snap = await SnapshotAsync(survey, ct);
+        var actorEmail = await ActorEmailAsync();
+        changeLog.Add(
+            ChangeLogEntityType.Survey, survey.Id, ChangeLogAction.Deleted,
+            SurveyChangeLog.ForDelete(snap), SurveyChangeLog.Context(snap, actorEmail));
+
         Db.Surveys.Remove(survey);
         await Db.SaveChangesAsync(ct);
         return NoContent();
@@ -292,6 +359,33 @@ public class SurveysController(AppDbContext db, AppTime time, NotificationServic
         var questions = r.Questions ?? [];
         for (var i = 0; i < questions.Count; i++)
             survey.Questions.Add(SurveyQuestionBuilder.BuildSurveyQuestion(questions[i], i, $"questions[{i}]"));
+    }
+
+    private async Task<SurveyChangeLog.Snapshot> SnapshotAsync(Survey survey, CancellationToken ct)
+    {
+        var groupName = survey.Group?.Name
+            ?? await Db.Groups.AsNoTracking().Where(g => g.Id == survey.GroupId).Select(g => g.Name).FirstAsync(ct);
+        string? teacherName = survey.Teacher?.FullName;
+        if (teacherName is null && survey.TeacherId is not null)
+        {
+            var t = await Db.Teachers.AsNoTracking().FirstAsync(x => x.Id == survey.TeacherId, ct);
+            teacherName = t.FullName;
+        }
+        string? disciplineName = survey.Discipline?.Name;
+        if (disciplineName is null && survey.DisciplineId is not null)
+            disciplineName = await Db.Disciplines.AsNoTracking().Where(d => d.Id == survey.DisciplineId)
+                .Select(d => d.Name).FirstAsync(ct);
+
+        return new SurveyChangeLog.Snapshot(
+            survey.Type, survey.Title, survey.Description, groupName, teacherName, disciplineName,
+            survey.OpensAt, survey.ClosesAt, survey.Status,
+            survey.Questions.Count, SurveyChangeLog.FingerprintQuestions(survey.Questions));
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 }
 

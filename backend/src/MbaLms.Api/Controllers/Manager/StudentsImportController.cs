@@ -14,7 +14,8 @@ public class StudentsImportController(
     AppDbContext db,
     CurrentUser current,
     ImportSessionStore sessions,
-    UserManager<AppUser> users)
+    UserManager<AppUser> users,
+    ChangeLogWriter changeLog)
     : ManagerControllerBase(db)
 {
     public const string Entity = "students";
@@ -170,6 +171,9 @@ public class StudentsImportController(
             }
         }
 
+        var actorEmail = await ActorEmailAsync();
+        var groupsById = groups.ToDictionary(g => g.Id);
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
@@ -182,7 +186,9 @@ public class StudentsImportController(
                 result = await users.AddToRoleAsync(user, Roles.Student);
                 if (!result.Succeeded) throw IdentityFailure(result);
 
-                Db.Students.Add(new Student
+                // Note: subsequent UserManager.SaveChanges may flush tracked Students/CL from prior rows
+                // in this transaction — intentional; rollback still undoes the whole batch.
+                var student = new Student
                 {
                     Id = Guid.CreateVersion7(),
                     UserId = user.Id,
@@ -191,16 +197,29 @@ public class StudentsImportController(
                     MiddleName = Clean(row.MiddleName),
                     Email = email,
                     GroupId = groupId
-                });
+                };
+                var snap = StudentChangeLog.From(student, groupsById[groupId].Name);
+                changeLog.Add(
+                    ChangeLogEntityType.Student, student.Id, ChangeLogAction.Created,
+                    StudentChangeLog.ForCreate(snap, passwordSet: true),
+                    StudentChangeLog.Context(snap, actorEmail, StudentChangeLog.SourceExcelImport));
+                Db.Students.Add(student);
             }
 
             foreach (var (row, entity, groupId) in plannedUpdates)
             {
+                var before = StudentChangeLog.From(entity, groupsById[entity.GroupId].Name);
                 entity.LastName = row.LastName;
                 entity.FirstName = row.FirstName;
                 entity.MiddleName = Clean(row.MiddleName);
                 entity.GroupId = groupId;
                 // Email and Identity credentials stay unchanged.
+                var after = StudentChangeLog.From(entity, groupsById[groupId].Name);
+                var changes = StudentChangeLog.Diff(before, after, passwordReset: false);
+                if (changes.Count == 0) continue;
+                changeLog.Add(
+                    ChangeLogEntityType.Student, entity.Id, ChangeLogAction.Updated,
+                    changes, StudentChangeLog.Context(after, actorEmail, StudentChangeLog.SourceExcelImport));
             }
 
             await Db.SaveChangesAsync(ct);
@@ -356,6 +375,12 @@ public class StudentsImportController(
     {
         row.Action = ImportRowAction.Conflict;
         row.Errors.Add(new ImportRowError(field, code, null, row.RowNumber));
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private static AppException IdentityFailure(IdentityResult result)

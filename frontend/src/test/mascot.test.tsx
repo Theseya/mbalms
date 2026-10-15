@@ -17,7 +17,7 @@ const done = (id: string) => survey(id, { submitted: true, submittedAt: '2026-10
 const missed = (id: string) => survey(id, { status: 'Closed', canRespond: false })
 
 const me = { id: 'u1', email: 'anna@example.test', role: 'Student', displayName: 'Anna', groupName: 'MBA-01', timeZone: 'Europe/Moscow' }
-const dashboard: Dashboard = { nextLesson: null, upcomingLessons: [], pendingSurveys: 0, unreadNotifications: 0, recentGrades: [] }
+const dashboard: Dashboard = { nextLesson: null, upcomingLessons: [], pendingSurveys: 0, unreadNotifications: 0, recentGrades: [], recentAnnouncements: [] }
 
 function renderHome(surveys: StudentSurveyListItem[] | 'error') {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

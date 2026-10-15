@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, api, query } from '../../api/client'
 import type { Group, PagedResult, Student } from '../../api/types'
 import { ImportDialog } from '../../components/ImportDialog'
@@ -12,6 +12,11 @@ import { PAGE_SIZE, useDebounced } from '../../lib/paging'
 import { useConfirm } from '../../lib/useConfirm'
 import { useFieldError } from '../../lib/useFieldError'
 import { toApiError, useLoad } from '../../lib/useLoad'
+
+interface InviteResult {
+  queued: boolean
+  developmentPreviewId: string | null
+}
 
 interface Form {
   id: string | null
@@ -48,6 +53,7 @@ export function StudentsPage() {
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [saving, setSaving] = useState(false)
+  const [invitePreviewId, setInvitePreviewId] = useState<string | null>(null)
   const fieldError = useFieldError(error)
   const { confirm, dialog } = useConfirm()
   const activeGroups = groups.data?.filter((g) => g.status === 'Active')
@@ -122,6 +128,23 @@ export function StudentsPage() {
     }
   }
 
+  const onInvite = async (s: Student) => {
+    const ok = await confirm({
+      title: t('students.confirmInviteTitle'),
+      message: t('students.confirmInvite', { name: s.fullName, email: s.email }),
+      confirmLabel: t('students.invite'),
+    })
+    if (!ok) return
+    setActionError(null)
+    setInvitePreviewId(null)
+    try {
+      const result = await api.post<InviteResult>(`/api/manager/students/${s.id}/invite`, {})
+      if (result.developmentPreviewId) setInvitePreviewId(result.developmentPreviewId)
+    } catch (err) {
+      setActionError(toApiError(err))
+    }
+  }
+
   const editingGroups = form?.id ? groups.data?.filter((g) => g.status === 'Active' || g.id === form.groupId) : activeGroups
 
   return (
@@ -153,6 +176,12 @@ export function StudentsPage() {
         )}
       </div>
       <ErrorBanner error={list.error ?? actionError} />
+      {invitePreviewId && (
+        <p className="muted">
+          {t('students.inviteQueuedDev')}{' '}
+          <Link to={`/dev/mail/${invitePreviewId}`}>{t('students.openPreparedEmail')}</Link>
+        </p>
+      )}
       {list.loading && !list.data ? <Loading /> : !rows.length ? <Empty /> : (
         <div className="table-wrap">
           <table>
@@ -175,6 +204,7 @@ export function StudentsPage() {
                   </td>
                   <td className="actions-col">
                     <button type="button" className="btn btn-small" onClick={() => open(s)}>{t('common.edit')}</button>
+                    <button type="button" className="btn btn-small" onClick={() => onInvite(s)}>{t('students.invite')}</button>
                     <button type="button" className="btn btn-small btn-danger" onClick={() => onDelete(s)}>{t('common.delete')}</button>
                   </td>
                 </tr>

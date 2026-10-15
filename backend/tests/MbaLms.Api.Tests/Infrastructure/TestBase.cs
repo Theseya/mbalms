@@ -7,9 +7,16 @@ namespace MbaLms.Api.Tests.Infrastructure;
 public record StudentAccount(Guid Id, Guid GroupId, string Email, string Password);
 
 [Collection(ApiCollection.Name)]
-public abstract class TestBase(ApiFactory factory)
+public abstract class TestBase
 {
-    protected ApiFactory Factory { get; } = factory;
+    protected ApiFactory Factory { get; }
+
+    protected TestBase(ApiFactory factory)
+    {
+        Factory = factory;
+        // Controllable clock is shared across the collection; always start from wall-clock time.
+        factory.Clock.ResetToSystem();
+    }
 
     protected static string Unique(string prefix) => $"{prefix}-{Guid.NewGuid().ToString("N")[..8]}";
 

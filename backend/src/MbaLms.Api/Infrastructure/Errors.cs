@@ -35,6 +35,17 @@ public static class ErrorCodes
     public const string ImportEmpty = "import_empty";
     public const string ImportInvalidFile = "import_invalid_file";
     public const string ImportPasswordColumn = "import_password_column";
+    public const string MailNotConfigured = "mail_not_configured";
+    public const string InvalidPasswordToken = "invalid_password_token";
+    public const string FileRequired = "file_required";
+    public const string FileNotPdf = "file_not_pdf";
+    public const string FileTooLarge = "file_too_large";
+    /// <summary>Removing assessment elements would delete filled-in scores; repeat with confirmation.</summary>
+    public const string ScoresRemovalNotConfirmed = "scores_removal_not_confirmed";
+    /// <summary>The transfer would change existing final grades; repeat with confirmation.</summary>
+    public const string GradeChangesNotConfirmed = "grade_changes_not_confirmed";
+    public const string WorkSheetWeightsIncomplete = "worksheet_weights_incomplete";
+    public const string WorkSheetNoElements = "worksheet_no_elements";
 }
 
 /// <summary>Field-level validation error codes (used as values in the "errors" dictionary).</summary>
@@ -51,6 +62,10 @@ public static class FieldCodes
     public const string PasswordWeak = "password_weak";
     public const string FormulaNotAllowed = "formula_not_allowed";
     public const string Ambiguous = "ambiguous";
+    public const string TooManyDecimals = "too_many_decimals";
+    public const string AttendedExceedsTotal = "attended_exceeds_total";
+    public const string TotalLessonsRequired = "total_lessons_required";
+    public const string Duplicate = "duplicate";
 
     public static readonly IReadOnlySet<string> All = typeof(FieldCodes)
         .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -84,15 +99,20 @@ public static class ValidationErrors
     }
 }
 
-public class AppException(int status, string code, IDictionary<string, string[]>? errors = null) : Exception(code)
+public class AppException(int status, string code, IDictionary<string, string[]>? errors = null, object? details = null)
+    : Exception(code)
 {
     public int Status { get; } = status;
     public string Code { get; } = code;
     public IDictionary<string, string[]>? Errors { get; } = errors;
+    public object? Details { get; } = details;
 
     public static AppException NotFound() => new(StatusCodes.Status404NotFound, ErrorCodes.NotFound);
-    public static AppException Conflict(string code) => new(StatusCodes.Status409Conflict, code);
+    public static AppException Conflict(string code, object? details = null) =>
+        new(StatusCodes.Status409Conflict, code, details: details);
     public static AppException BadRequest(string code) => new(StatusCodes.Status400BadRequest, code);
+    public static AppException ServiceUnavailable(string code) =>
+        new(StatusCodes.Status503ServiceUnavailable, code);
 
     /// <param name="field">C# property name or path; converted to camelCase to match JSON.</param>
     public static AppException Validation(string field, string fieldCode) =>
@@ -114,6 +134,7 @@ public sealed class AppExceptionHandler(ILogger<AppExceptionHandler> logger, IPr
         int status;
         string code;
         IDictionary<string, string[]>? errors = null;
+        object? details = null;
 
         switch (exception)
         {
@@ -121,6 +142,7 @@ public sealed class AppExceptionHandler(ILogger<AppExceptionHandler> logger, IPr
                 status = app.Status;
                 code = app.Code;
                 errors = app.Errors;
+                details = app.Details;
                 break;
             case DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } }:
                 status = StatusCodes.Status409Conflict;
@@ -149,6 +171,7 @@ public sealed class AppExceptionHandler(ILogger<AppExceptionHandler> logger, IPr
         var pd = new ProblemDetails { Status = status, Title = code };
         pd.Extensions["code"] = code;
         if (errors is not null) pd.Extensions["errors"] = errors;
+        if (details is not null) pd.Extensions["details"] = details;
 
         return await problemDetails.TryWriteAsync(new ProblemDetailsContext
         {

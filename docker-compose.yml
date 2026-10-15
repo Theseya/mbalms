@@ -37,6 +37,8 @@ services:
       Seed__ManagerPassword: ${MANAGER_PASSWORD:-}
     volumes:
       - api-keys:/keys
+      # Uploaded discipline programmes (PDF). Without this volume they would be lost when the container is recreated.
+      - documents:/data/documents
 
   web:
     build: ./frontend
@@ -49,3 +51,4 @@ services:
 volumes:
   db-data:
   api-keys:
+  documents:

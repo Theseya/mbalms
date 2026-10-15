@@ -50,6 +50,71 @@ namespace MbaLms.Api.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("MbaLms.Api.Domain.Announcement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsPinned")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("IsPinned");
+
+                    b.HasIndex("Status", "PublishedAt");
+
+                    b.ToTable("Announcements");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AnnouncementGroup", b =>
+                {
+                    b.Property<Guid>("AnnouncementId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("AnnouncementId", "GroupId");
+
+                    b.HasIndex("GroupId");
+
+                    b.ToTable("AnnouncementGroups");
+                });
+
             modelBuilder.Entity("MbaLms.Api.Domain.AppUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -115,6 +180,121 @@ namespace MbaLms.Api.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("MbaLms.Api.Domain.AssessmentCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DisciplineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IncludeInAverage")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Weight")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisciplineId", "Kind")
+                        .IsUnique()
+                        .HasFilter("\"Kind\" = 'Attendance'");
+
+                    b.HasIndex("DisciplineId", "Order");
+
+                    b.ToTable("AssessmentCategories", t =>
+                        {
+                            t.HasCheckConstraint("CK_AssessmentCategories_WeightRange", "\"Weight\" >= 0 AND \"Weight\" <= 100");
+                        });
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AssessmentElement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId", "Order");
+
+                    b.ToTable("AssessmentElements");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.ChangeLogEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChangesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ContextJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Action");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.HasIndex("OccurredAt", "Id");
+
+                    b.ToTable("ChangeLogEntries", (string)null);
+                });
+
             modelBuilder.Entity("MbaLms.Api.Domain.Discipline", b =>
                 {
                     b.Property<Guid>("Id")
@@ -136,6 +316,69 @@ namespace MbaLms.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Disciplines");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.DisciplineAssessmentSettings", b =>
+                {
+                    b.Property<Guid>("DisciplineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("AttendanceThreshold")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<string>("CalculationMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Weighted");
+
+                    b.Property<bool>("IncludeAttendanceInAverage")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.HasKey("DisciplineId");
+
+                    b.ToTable("DisciplineAssessmentSettings", t =>
+                        {
+                            t.HasCheckConstraint("CK_DisciplineAssessmentSettings_ThresholdRange", "\"AttendanceThreshold\" >= 0 AND \"AttendanceThreshold\" <= 100");
+                        });
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.DisciplineProgram", b =>
+                {
+                    b.Property<Guid>("DisciplineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("StorageKey")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UploadedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("DisciplineId");
+
+                    b.HasIndex("StorageKey")
+                        .IsUnique();
+
+                    b.ToTable("DisciplinePrograms", t =>
+                        {
+                            t.HasCheckConstraint("CK_DisciplinePrograms_SizePositive", "\"SizeBytes\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.Grade", b =>
@@ -754,6 +997,115 @@ namespace MbaLms.Api.Data.Migrations
                     b.ToTable("Teachers");
                 });
 
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DisciplineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PeriodId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("TotalLessons")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisciplineId");
+
+                    b.HasIndex("PeriodId");
+
+                    b.HasIndex("GroupId", "DisciplineId", "PeriodId")
+                        .IsUnique();
+
+                    b.ToTable("WorkSheets", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkSheets_TotalLessons", "\"TotalLessons\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheetRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AttendedLessons")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("CalculatedRaw")
+                        .HasPrecision(12, 6)
+                        .HasColumnType("numeric(12,6)");
+
+                    b.Property<int?>("CalculatedRounded")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ManualFinal")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("TransferredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TransferredFinal")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("WorkSheetId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("WorkSheetId", "StudentId")
+                        .IsUnique();
+
+                    b.ToTable("WorkSheetRows", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkSheetRows_Attended", "\"AttendedLessons\" >= 0");
+
+                            t.HasCheckConstraint("CK_WorkSheetRows_CalculatedRounded", "\"CalculatedRounded\" >= 0 AND \"CalculatedRounded\" <= 10");
+
+                            t.HasCheckConstraint("CK_WorkSheetRows_ManualFinal", "\"ManualFinal\" >= 0 AND \"ManualFinal\" <= 10");
+                        });
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheetScore", b =>
+                {
+                    b.Property<Guid>("RowId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ElementId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)");
+
+                    b.HasKey("RowId", "ElementId");
+
+                    b.HasIndex("ElementId");
+
+                    b.ToTable("WorkSheetScores", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkSheetScores_ValueRange", "\"Value\" >= 0 AND \"Value\" <= 10");
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
                 {
                     b.Property<Guid>("Id")
@@ -882,6 +1234,80 @@ namespace MbaLms.Api.Data.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.Announcement", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.AppUser", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AnnouncementGroup", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Announcement", "Announcement")
+                        .WithMany("Groups")
+                        .HasForeignKey("AnnouncementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MbaLms.Api.Domain.Group", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Announcement");
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AssessmentCategory", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Discipline", "Discipline")
+                        .WithMany()
+                        .HasForeignKey("DisciplineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Discipline");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AssessmentElement", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.AssessmentCategory", "Category")
+                        .WithMany("Works")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.DisciplineAssessmentSettings", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Discipline", "Discipline")
+                        .WithOne()
+                        .HasForeignKey("MbaLms.Api.Domain.DisciplineAssessmentSettings", "DisciplineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Discipline");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.DisciplineProgram", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Discipline", "Discipline")
+                        .WithOne()
+                        .HasForeignKey("MbaLms.Api.Domain.DisciplineProgram", "DisciplineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Discipline");
                 });
 
             modelBuilder.Entity("MbaLms.Api.Domain.Grade", b =>
@@ -1102,6 +1528,71 @@ namespace MbaLms.Api.Data.Migrations
                     b.Navigation("Template");
                 });
 
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheet", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Discipline", "Discipline")
+                        .WithMany()
+                        .HasForeignKey("DisciplineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MbaLms.Api.Domain.Group", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MbaLms.Api.Domain.AcademicPeriod", "Period")
+                        .WithMany()
+                        .HasForeignKey("PeriodId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Discipline");
+
+                    b.Navigation("Group");
+
+                    b.Navigation("Period");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheetRow", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MbaLms.Api.Domain.WorkSheet", "WorkSheet")
+                        .WithMany("Rows")
+                        .HasForeignKey("WorkSheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Student");
+
+                    b.Navigation("WorkSheet");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheetScore", b =>
+                {
+                    b.HasOne("MbaLms.Api.Domain.AssessmentElement", "Element")
+                        .WithMany()
+                        .HasForeignKey("ElementId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MbaLms.Api.Domain.WorkSheetRow", "Row")
+                        .WithMany("Scores")
+                        .HasForeignKey("RowId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Element");
+
+                    b.Navigation("Row");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -1153,6 +1644,16 @@ namespace MbaLms.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("MbaLms.Api.Domain.Announcement", b =>
+                {
+                    b.Navigation("Groups");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.AssessmentCategory", b =>
+                {
+                    b.Navigation("Works");
+                });
+
             modelBuilder.Entity("MbaLms.Api.Domain.Group", b =>
                 {
                     b.Navigation("Students");
@@ -1183,6 +1684,16 @@ namespace MbaLms.Api.Data.Migrations
             modelBuilder.Entity("MbaLms.Api.Domain.SurveyTemplateQuestion", b =>
                 {
                     b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheet", b =>
+                {
+                    b.Navigation("Rows");
+                });
+
+            modelBuilder.Entity("MbaLms.Api.Domain.WorkSheetRow", b =>
+                {
+                    b.Navigation("Scores");
                 });
 #pragma warning restore 612, 618
         }

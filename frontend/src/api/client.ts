@@ -4,12 +4,14 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly fieldErrors: FieldErrors
+  readonly details: unknown
 
-  constructor(status: number, code: string, fieldErrors: FieldErrors = {}) {
+  constructor(status: number, code: string, fieldErrors: FieldErrors = {}, details: unknown = undefined) {
     super(code)
     this.status = status
     this.code = code
     this.fieldErrors = fieldErrors
+    this.details = details
   }
 }
 
@@ -32,8 +34,8 @@ export async function refreshCsrf(): Promise<void> {
 
 async function toError(res: Response): Promise<ApiError> {
   try {
-    const body = (await res.json()) as { code?: string; errors?: FieldErrors }
-    return new ApiError(res.status, body.code ?? statusCode(res.status), body.errors ?? {})
+    const body = (await res.json()) as { code?: string; errors?: FieldErrors; details?: unknown }
+    return new ApiError(res.status, body.code ?? statusCode(res.status), body.errors ?? {}, body.details)
   } catch {
     return new ApiError(res.status, statusCode(res.status))
   }
@@ -43,6 +45,7 @@ function statusCode(status: number): string {
   if (status === 401) return 'unauthorized'
   if (status === 403) return 'forbidden'
   if (status === 404) return 'not_found'
+  if (status === 413) return 'file_too_large'
   if (status === 429) return 'too_many_requests'
   return 'server_error'
 }

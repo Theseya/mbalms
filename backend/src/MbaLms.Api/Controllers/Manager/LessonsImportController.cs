@@ -3,6 +3,7 @@ using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
 using MbaLms.Api.Infrastructure.Import;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,7 +14,7 @@ public record ScheduleImportChangedPayload(string Change, int Created, int Updat
 
 [Route("api/manager/imports/lessons")]
 public class LessonsImportController(AppDbContext db, CurrentUser current, ImportSessionStore sessions, AppTime time,
-    NotificationService notifications)
+    NotificationService notifications, ChangeLogWriter changeLog, UserManager<AppUser> users)
     : ManagerControllerBase(db)
 {
     public const string Entity = "lessons";
@@ -186,12 +187,17 @@ public class LessonsImportController(AppDbContext db, CurrentUser current, Impor
         var updated = 0;
         var skipped = payload.Rows.Count - writable.Count;
 
+        var groupsById = groups.ToDictionary(g => g.Id);
+        var disciplinesById = disciplines.ToDictionary(d => d.Id);
+        var teachersById = teachers.ToDictionary(t => t.Id);
+        var actorEmail = await ActorEmailAsync();
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         try
         {
             foreach (var (row, groupId, disciplineId, teacherId, starts, ends) in plannedCreates)
             {
-                Db.Lessons.Add(new Lesson
+                var lesson = new Lesson
                 {
                     Id = Guid.CreateVersion7(),
                     GroupId = groupId,
@@ -203,7 +209,17 @@ public class LessonsImportController(AppDbContext db, CurrentUser current, Impor
                     Location = Clean(row.Location),
                     Comment = Clean(row.Comment),
                     Status = row.Status
-                });
+                };
+                var snap = LessonChangeLog.From(
+                    groupsById[groupId].Name, disciplinesById[disciplineId].Name, teachersById[teacherId].FullName,
+                    lesson.StartsAt, lesson.EndsAt, lesson.Format, lesson.Location, lesson.Comment, lesson.Status);
+                changeLog.Add(
+                    ChangeLogEntityType.Lesson,
+                    lesson.Id,
+                    ChangeLogAction.Created,
+                    LessonChangeLog.ForCreate(snap),
+                    LessonChangeLog.Context(snap, actorEmail, time, LessonChangeLog.SourceExcelImport));
+                Db.Lessons.Add(lesson);
                 created++;
                 Bump(groupStats, groupId, create: true);
             }
@@ -217,6 +233,10 @@ public class LessonsImportController(AppDbContext db, CurrentUser current, Impor
                     continue;
                 }
 
+                var before = LessonChangeLog.From(
+                    groupsById[entity.GroupId].Name, disciplinesById[entity.DisciplineId].Name, teachersById[entity.TeacherId].FullName,
+                    entity.StartsAt, entity.EndsAt, entity.Format, entity.Location, entity.Comment, entity.Status);
+
                 entity.GroupId = groupId;
                 entity.DisciplineId = disciplineId;
                 entity.TeacherId = teacherId;
@@ -226,6 +246,21 @@ public class LessonsImportController(AppDbContext db, CurrentUser current, Impor
                 entity.Location = Clean(row.Location);
                 entity.Comment = Clean(row.Comment);
                 entity.Status = row.Status;
+
+                var after = LessonChangeLog.From(
+                    groupsById[groupId].Name, disciplinesById[disciplineId].Name, teachersById[teacherId].FullName,
+                    entity.StartsAt, entity.EndsAt, entity.Format, entity.Location, entity.Comment, entity.Status);
+                var changes = LessonChangeLog.Diff(before, after);
+                if (changes.Count > 0)
+                {
+                    changeLog.Add(
+                        ChangeLogEntityType.Lesson,
+                        entity.Id,
+                        ChangeLogAction.Updated,
+                        changes,
+                        LessonChangeLog.Context(after, actorEmail, time, LessonChangeLog.SourceExcelImport));
+                }
+
                 updated++;
                 Bump(groupStats, groupId, create: false);
                 if (oldGroupId != groupId)
@@ -249,6 +284,12 @@ public class LessonsImportController(AppDbContext db, CurrentUser current, Impor
         }
 
         return new ImportConfirmResultDto(created, updated, skipped);
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private void AttachOverlapWarnings(List<LessonImportRow> rows, List<LessonSnap> dbLessons)

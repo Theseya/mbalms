@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -48,7 +49,9 @@ public record GradeHistoryDto(Guid Id, Guid GradeId, GradeChangeAction Action, i
     GradeStatus? OldStatus, GradeStatus? NewStatus, string? ChangedBy, DateTimeOffset ChangedAt);
 
 [Route("api/manager/grades")]
-public class GradesController(AppDbContext db, AppTime time, NotificationService notifications, CurrentUser currentUser)
+public class GradesController(
+    AppDbContext db, AppTime time, CurrentUser currentUser, ChangeLogWriter changeLog, UserManager<AppUser> users,
+    GradeWriter writer)
     : ManagerControllerBase(db)
 {
     [HttpGet]
@@ -92,23 +95,14 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
         var student = await Db.Students.Include(s => s.Group).FirstOrDefaultAsync(s => s.Id == r.StudentId, ct)
                       ?? throw AppException.Validation(nameof(r.StudentId), FieldCodes.NotFound);
         if (student.Group!.Status == GroupStatus.Archived) throw AppException.Conflict(ErrorCodes.GroupArchived);
-        await RequireExistsAsync<Discipline>(r.DisciplineId, nameof(r.DisciplineId), ct);
-        await RequireExistsAsync<AcademicPeriod>(r.PeriodId, nameof(r.PeriodId), ct);
+        var discipline = await Db.Disciplines.FirstOrDefaultAsync(d => d.Id == r.DisciplineId, ct)
+                         ?? throw AppException.Validation(nameof(r.DisciplineId), FieldCodes.NotFound);
+        var period = await Db.Periods.FirstOrDefaultAsync(p => p.Id == r.PeriodId, ct)
+                     ?? throw AppException.Validation(nameof(r.PeriodId), FieldCodes.NotFound);
         if (await Db.Grades.AnyAsync(g => g.StudentId == r.StudentId && g.DisciplineId == r.DisciplineId && g.PeriodId == r.PeriodId, ct))
             throw AppException.Conflict(ErrorCodes.Duplicate);
 
-        var grade = new Grade
-        {
-            Id = Guid.CreateVersion7(),
-            StudentId = student.Id,
-            DisciplineId = r.DisciplineId!.Value,
-            PeriodId = r.PeriodId!.Value,
-            Value = r.Value!.Value,
-            Status = GradeStatus.Draft,
-            UpdatedAt = time.UtcNow
-        };
-        Db.Grades.Add(grade);
-        Record(grade, GradeChangeAction.Created, null, null);
+        var grade = writer.CreateDraft(student, discipline, period, r.Value!.Value, await ActorEmailAsync());
         await Db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = grade.Id }, await Get(grade.Id, ct));
     }
@@ -123,7 +117,8 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
         var grade = await LoadForChange(id, ct);
         if (grade.Value != r.Value && grade.Status == GradeStatus.Published && !r.ConfirmPublishedChange)
             throw AppException.Conflict(ErrorCodes.PublishedChangeNotConfirmed);
-        if (ChangeValue(grade, r.Value!.Value)) await Db.SaveChangesAsync(ct);
+        var actorEmail = await ActorEmailAsync();
+        if (writer.ChangeValue(grade, r.Value!.Value, actorEmail)) await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
 
@@ -159,7 +154,8 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
         var discipline = await Db.Disciplines.FirstOrDefaultAsync(d => d.Id == disciplineId, ct) ?? throw AppException.NotFound();
         var period = await Db.Periods.FirstOrDefaultAsync(p => p.Id == periodId, ct) ?? throw AppException.NotFound();
 
-        var students = await Db.Students.Where(s => s.GroupId == groupId).ToDictionaryAsync(s => s.Id, ct);
+        var students = await Db.Students.Include(s => s.Group).Where(s => s.GroupId == groupId)
+            .ToDictionaryAsync(s => s.Id, ct);
         var errors = new Dictionary<string, string[]>();
         var seen = new HashSet<Guid>();
         for (var i = 0; i < r.Entries.Count; i++)
@@ -177,6 +173,7 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
                                                            && g.Status == GradeStatus.Published && g.Value != e.Value))
             throw AppException.Conflict(ErrorCodes.PublishedChangeNotConfirmed);
 
+        var actorEmail = await ActorEmailAsync();
         foreach (var entry in entries)
         {
             var student = students[entry.StudentId!.Value];
@@ -185,39 +182,13 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
                 grade.Student = student;
                 grade.Discipline = discipline;
                 grade.Period = period;
-                ChangeValue(grade, entry.Value!.Value);
+                writer.ChangeValue(grade, entry.Value!.Value, actorEmail);
                 continue;
             }
-            grade = new Grade
-            {
-                Id = Guid.CreateVersion7(),
-                StudentId = student.Id,
-                DisciplineId = discipline.Id,
-                PeriodId = period.Id,
-                Value = entry.Value!.Value,
-                Status = GradeStatus.Draft,
-                UpdatedAt = time.UtcNow
-            };
-            Db.Grades.Add(grade);
-            Record(grade, GradeChangeAction.Created, null, null);
+            writer.CreateDraft(student, discipline, period, entry.Value!.Value, actorEmail);
         }
         await Db.SaveChangesAsync(ct);
         return await Sheet(groupId, disciplineId, periodId, ct);
-    }
-
-    /// <summary>Returns false if the value is unchanged. The grade must have Student, Discipline and Period loaded.</summary>
-    private bool ChangeValue(Grade grade, int value)
-    {
-        if (grade.Value == value) return false;
-        Record(grade, GradeChangeAction.Updated, grade.Value, grade.Status, newValue: value);
-        grade.Value = value;
-        grade.UpdatedAt = time.UtcNow;
-        if (grade.Status == GradeStatus.Published)
-        {
-            grade.PublishedAt = time.UtcNow;
-            Notify(grade, "updated");
-        }
-        return true;
     }
 
     [HttpPost("{id:guid}/publish")]
@@ -225,7 +196,7 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Status == GradeStatus.Published) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
-        PublishGrade(grade);
+        writer.Publish(grade, await ActorEmailAsync());
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -240,7 +211,8 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
             .Where(g => ids.Contains(g.Id) && g.Status == GradeStatus.Draft).ToListAsync(ct);
         if (grades.Any(g => g.Student!.Group!.Status == GroupStatus.Archived))
             throw AppException.Conflict(ErrorCodes.GroupArchived);
-        foreach (var grade in grades) PublishGrade(grade);
+        var actorEmail = await ActorEmailAsync();
+        foreach (var grade in grades) writer.Publish(grade, actorEmail);
         await Db.SaveChangesAsync(ct);
         return new { published = grades.Count };
     }
@@ -250,10 +222,15 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Status == GradeStatus.Draft) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
-        Record(grade, GradeChangeAction.Unpublished, grade.Value, grade.Status, newStatus: GradeStatus.Draft);
+        var oldStatus = grade.Status;
+        writer.Record(grade, GradeChangeAction.Unpublished, grade.Value, grade.Status, newStatus: GradeStatus.Draft);
         grade.Status = GradeStatus.Draft;
         grade.PublishedAt = null;
         grade.UpdatedAt = time.UtcNow;
+        var snap = GradeChangeLog.From(grade);
+        changeLog.Add(
+            ChangeLogEntityType.Grade, grade.Id, ChangeLogAction.Unpublished,
+            GradeChangeLog.StatusOnly(oldStatus, grade.Status), GradeChangeLog.Context(snap, await ActorEmailAsync()));
         await Db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }
@@ -263,46 +240,15 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
     {
         var grade = await LoadForChange(id, ct);
         if (grade.Status == GradeStatus.Published) throw AppException.Conflict(ErrorCodes.InvalidStatusTransition);
-        Record(grade, GradeChangeAction.Deleted, grade.Value, grade.Status, deleted: true);
+        var snap = GradeChangeLog.From(grade);
+        writer.Record(grade, GradeChangeAction.Deleted, grade.Value, grade.Status, deleted: true);
+        changeLog.Add(
+            ChangeLogEntityType.Grade, grade.Id, ChangeLogAction.Deleted,
+            GradeChangeLog.ForDelete(snap), GradeChangeLog.Context(snap, await ActorEmailAsync()));
         Db.Grades.Remove(grade);
         await Db.SaveChangesAsync(ct);
         return NoContent();
     }
-
-    private void PublishGrade(Grade grade)
-    {
-        Record(grade, GradeChangeAction.Published, grade.Value, grade.Status, newStatus: GradeStatus.Published);
-        grade.Status = GradeStatus.Published;
-        grade.PublishedAt = time.UtcNow;
-        grade.UpdatedAt = time.UtcNow;
-        Notify(grade, "published");
-    }
-
-    /// <summary>
-    /// Adds a history entry to the same SaveChanges as the change itself. Must be called before the grade is mutated:
-    /// new value and status default to the grade's current ones.
-    /// </summary>
-    private void Record(Grade grade, GradeChangeAction action, int? oldValue, GradeStatus? oldStatus,
-        int? newValue = null, GradeStatus? newStatus = null, bool deleted = false) =>
-        Db.GradeHistory.Add(new GradeHistoryEntry
-        {
-            Id = Guid.CreateVersion7(),
-            GradeId = grade.Id,
-            StudentId = grade.StudentId,
-            DisciplineId = grade.DisciplineId,
-            PeriodId = grade.PeriodId,
-            Action = action,
-            OldValue = oldValue,
-            NewValue = deleted ? null : newValue ?? grade.Value,
-            OldStatus = oldStatus,
-            NewStatus = deleted ? null : newStatus ?? grade.Status,
-            ChangedByUserId = currentUser.UserId,
-            ChangedAt = time.UtcNow
-        });
-
-    private void Notify(Grade grade, string change) =>
-        notifications.Add(grade.Student!.UserId, NotificationType.GradePublished,
-            new GradePublishedPayload(grade.Id, grade.Discipline!.Name, grade.Period!.Name, change));
 
     private async Task<Grade> LoadForChange(Guid id, CancellationToken ct)
     {
@@ -312,6 +258,12 @@ public class GradesController(AppDbContext db, AppTime time, NotificationService
                     ?? throw AppException.NotFound();
         if (grade.Student!.Group!.Status == GroupStatus.Archived) throw AppException.Conflict(ErrorCodes.GroupArchived);
         return grade;
+    }
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(currentUser.UserId.ToString());
+        return user?.Email ?? user?.UserName;
     }
 
     private IQueryable<Grade> Query() =>

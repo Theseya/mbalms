@@ -1,4 +1,4 @@
-import type { AppNotification, Group, SurveyStatus } from '../api/types'
+import type { AnnouncementStatus, AppNotification, Group, SurveyStatus } from '../api/types'
 import type { ConfirmOptions } from '../components/ui'
 import { formatLocalDateTime } from './format'
 
@@ -10,6 +10,10 @@ export function groupLabel(t: T) {
 
 export function surveyStatusTone(s: SurveyStatus) {
   return s === 'Open' ? 'green' : s === 'Draft' ? 'amber' : 'gray'
+}
+
+export function announcementStatusTone(s: AnnouncementStatus) {
+  return s === 'Published' ? 'green' : s === 'Draft' ? 'amber' : 'gray'
 }
 
 /** Confirmation texts for publishing, reopening and closing a survey. */

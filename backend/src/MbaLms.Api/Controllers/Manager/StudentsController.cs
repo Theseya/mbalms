@@ -2,8 +2,10 @@ using System.ComponentModel.DataAnnotations;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
+using MbaLms.Api.Infrastructure.Email;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace MbaLms.Api.Controllers.Manager;
@@ -20,8 +22,16 @@ public record StudentRequest(
     // Required on create; on update, a non-empty value resets the password.
     [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string? Password);
 
+/// <param name="DevelopmentPreviewId">Set only when Email:Provider=Development (local capture). Never includes the token.</param>
+public record StudentInviteResultDto(bool Queued, Guid? DevelopmentPreviewId);
+
 [Route("api/manager/students")]
-public class StudentsController(AppDbContext db, UserManager<AppUser> users) : ManagerControllerBase(db)
+public class StudentsController(
+    AppDbContext db, UserManager<AppUser> users,
+    ChangeLogWriter changeLog, CurrentUser current,
+    IEmailSender emailSender, IEmailOutbox outbox,
+    PasswordSetupLinkService passwordLinks,
+    IHostEnvironment env) : ManagerControllerBase(db)
 {
     /// <summary>Students of active groups by default; a group filter also shows archived groups.</summary>
     [HttpGet]
@@ -71,7 +81,7 @@ public class StudentsController(AppDbContext db, UserManager<AppUser> users) : M
     {
         if (string.IsNullOrWhiteSpace(request.Password))
             throw AppException.Validation(nameof(request.Password), FieldCodes.Required);
-        await RequireActiveGroupAsync(request.GroupId, nameof(request.GroupId), ct);
+        var group = await RequireActiveGroupAsync(request.GroupId, nameof(request.GroupId), ct);
         var email = request.Email.Trim();
         if (await users.FindByEmailAsync(email) is not null)
             throw AppException.Validation(nameof(request.Email), ErrorCodes.Duplicate);
@@ -93,6 +103,12 @@ public class StudentsController(AppDbContext db, UserManager<AppUser> users) : M
             Email = email,
             GroupId = request.GroupId!.Value
         };
+        // Stage Student + ChangeLog only after Identity SaveChanges so they are not flushed early.
+        var snap = StudentChangeLog.From(student, group.Name);
+        changeLog.Add(
+            ChangeLogEntityType.Student, student.Id, ChangeLogAction.Created,
+            StudentChangeLog.ForCreate(snap, passwordSet: true),
+            StudentChangeLog.Context(snap, await ActorEmailAsync()));
         Db.Students.Add(student);
         await Db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -104,11 +120,14 @@ public class StudentsController(AppDbContext db, UserManager<AppUser> users) : M
     public async Task<StudentDto> Update(Guid id, StudentRequest request, CancellationToken ct)
     {
         var student = await Db.Students.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
+        var beforeGroupName = await Db.Groups.AsNoTracking()
+            .Where(g => g.Id == student.GroupId).Select(g => g.Name).FirstAsync(ct);
         if (student.GroupId != request.GroupId)
             await RequireActiveGroupAsync(request.GroupId, nameof(request.GroupId), ct);
 
         var user = await users.FindByIdAsync(student.UserId.ToString()) ?? throw AppException.NotFound();
         var email = request.Email.Trim();
+        var before = StudentChangeLog.From(student, beforeGroupName);
 
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
         if (!string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase))
@@ -121,32 +140,86 @@ public class StudentsController(AppDbContext db, UserManager<AppUser> users) : M
             var r = await users.UpdateAsync(user);
             if (!r.Succeeded) throw IdentityFailure(r);
         }
+
+        var passwordReset = false;
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
             var r = await users.RemovePasswordAsync(user);
             if (r.Succeeded) r = await users.AddPasswordAsync(user, request.Password);
             if (!r.Succeeded) throw IdentityFailure(r);
+            passwordReset = true;
         }
 
+        // Mutate Student only after Identity SaveChanges so UserManager does not flush profile Diff early.
         student.LastName = request.LastName.Trim();
         student.FirstName = request.FirstName.Trim();
         student.MiddleName = Clean(request.MiddleName);
         student.Email = email;
         student.GroupId = request.GroupId!.Value;
+
+        var afterGroupName = await Db.Groups.AsNoTracking()
+            .Where(g => g.Id == student.GroupId).Select(g => g.Name).FirstAsync(ct);
+        var after = StudentChangeLog.From(student, afterGroupName);
+        var changes = StudentChangeLog.Diff(before, after, passwordReset);
+        if (changes.Count > 0)
+        {
+            changeLog.Add(
+                ChangeLogEntityType.Student, student.Id, ChangeLogAction.Updated,
+                changes, StudentChangeLog.Context(after, await ActorEmailAsync()));
+        }
+
         await Db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await Get(id, ct);
     }
 
-    /// <summary>Students with grades or survey responses cannot be deleted (data is kept).</summary>
+    /// <summary>
+    /// Prepares an invite email with login (email) and a one-time password-setup link (no password in the message).
+    /// Delivery is delegated to <see cref="IEmailSender"/>; Development captures for preview, Production without SMTP fails clearly.
+    /// </summary>
+    [HttpPost("{id:guid}/invite")]
+    [EnableRateLimiting("password-mail")]
+    public async Task<StudentInviteResultDto> Invite(Guid id, CancellationToken ct)
+    {
+        if (!emailSender.IsConfigured)
+            throw AppException.ServiceUnavailable(ErrorCodes.MailNotConfigured);
+
+        var student = await Db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw AppException.NotFound();
+        var user = await users.FindByIdAsync(student.UserId.ToString())
+            ?? throw AppException.NotFound();
+
+        var (_, setupUrl) = await passwordLinks.CreateResetLinkAsync(user);
+        var message = PasswordEmailComposer.Invite(
+            student.Email,
+            $"{student.FirstName} {student.LastName}".Trim(),
+            setupUrl);
+        await emailSender.SendAsync(message, ct);
+
+        Guid? previewId = null;
+        if (env.IsDevelopment() || env.IsEnvironment("Testing"))
+            previewId = outbox.LatestFor(student.Email)?.Id;
+
+        return new StudentInviteResultDto(Queued: true, DevelopmentPreviewId: previewId);
+    }
+
+    /// <summary>Students with grades, working-sheet results or survey responses cannot be deleted (data is kept).</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var student = await Db.Students.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw AppException.NotFound();
-        if (await Db.Grades.AnyAsync(g => g.StudentId == id, ct) || await Db.SurveyResponses.AnyAsync(r => r.StudentId == id, ct))
+        if (await Db.Grades.AnyAsync(g => g.StudentId == id, ct) || await Db.SurveyResponses.AnyAsync(r => r.StudentId == id, ct)
+            || await Db.WorkSheetRows.AnyAsync(r => r.StudentId == id, ct))
             throw AppException.Conflict(ErrorCodes.InUse);
 
+        var groupName = await Db.Groups.AsNoTracking()
+            .Where(g => g.Id == student.GroupId).Select(g => g.Name).FirstAsync(ct);
+        var snap = StudentChangeLog.From(student, groupName);
+
         await using var tx = await Db.Database.BeginTransactionAsync(ct);
+        changeLog.Add(
+            ChangeLogEntityType.Student, student.Id, ChangeLogAction.Deleted,
+            StudentChangeLog.ForDelete(snap), StudentChangeLog.Context(snap, await ActorEmailAsync()));
         Db.Students.Remove(student);
         await Db.SaveChangesAsync(ct);
         var user = await users.FindByIdAsync(student.UserId.ToString());
@@ -161,6 +234,12 @@ public class StudentsController(AppDbContext db, UserManager<AppUser> users) : M
 
     private static StudentDto ToDto(Student s) =>
         new(s.Id, s.LastName, s.FirstName, s.MiddleName, s.FullName, s.Email, s.GroupId, s.Group!.Name, s.Group.Status);
+
+    private async Task<string?> ActorEmailAsync()
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString());
+        return user?.Email ?? user?.UserName;
+    }
 
     private static AppException IdentityFailure(IdentityResult result)
     {

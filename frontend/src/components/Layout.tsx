@@ -31,10 +31,13 @@ const managerLinks = [
   ['/manager/disciplines', 'nav.disciplines'],
   ['/manager/periods', 'nav.periods'],
   ['/manager/schedule', 'nav.schedule'],
+  ['/manager/worksheet', 'nav.worksheet'],
   ['/manager/gradebook', 'nav.gradebook'],
   ['/manager/grades', 'nav.grades'],
   ['/manager/surveys', 'nav.surveys'],
   ['/manager/survey-templates', 'nav.surveyTemplates'],
+  ['/manager/announcements', 'nav.announcements'],
+  ['/manager/change-log', 'nav.changeLog'],
 ] as const
 
 const studentLinks = [
@@ -42,6 +45,7 @@ const studentLinks = [
   ['/student/schedule', 'nav.schedule'],
   ['/student/grades', 'nav.grades'],
   ['/student/surveys', 'nav.surveys'],
+  ['/student/announcements', 'nav.announcements'],
 ] as const
 
 export function Layout() {

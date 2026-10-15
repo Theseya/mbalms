@@ -15,6 +15,8 @@ public class SchemaTests(ApiFactory factory) : TestBase(factory)
     [
         "Programs", "Periods", "Groups", "Students", "Teachers", "Disciplines", "Lessons", "Grades", "GradeHistory",
         "Surveys", "SurveyQuestions", "SurveyQuestionOptions", "SurveyResponses", "SurveyAnswers", "Notifications",
+        "SurveyTemplates", "SurveyTemplateQuestions", "SurveyTemplateOptions",
+        "Announcements", "AnnouncementGroups", "ChangeLogEntries",
         "AspNetUsers", "AspNetRoles", "AspNetUserRoles"
     ];
 

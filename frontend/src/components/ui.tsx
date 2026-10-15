@@ -1,4 +1,5 @@
-import { useEffect, useId, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../api/client'
 import { currentLanguage } from '../i18n'
@@ -62,20 +63,36 @@ export function Field({ label, error, hint, required, children }: FieldProps) {
   )
 }
 
-export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide, stacked }: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  wide?: boolean
+  stacked?: boolean
+}) {
   const { t } = useTranslation()
   const titleId = useId()
+  const backdrop = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      // With stacked dialogs (a confirmation over a form) only the topmost one closes.
+      const open = document.querySelectorAll('.modal-backdrop')
+      if (open[open.length - 1] === backdrop.current) onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  useEffect(() => {
+    if (!stacked) return
+    backdrop.current?.querySelector<HTMLElement>('[role="dialog"]')?.focus()
+  }, [stacked])
 
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal${wide ? ' modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+  return createPortal((
+    <div ref={backdrop} className={`modal-backdrop${stacked ? ' modal-stacked' : ''}`}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`modal${wide ? ' modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex={-1}>
         <div className="modal-header">
           <h2 id={titleId}>{title}</h2>
           <button type="button" className="btn-icon" onClick={onClose} aria-label={t('common.close')}>×</button>
@@ -83,7 +100,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
         {children}
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 export interface ConfirmOptions {
@@ -98,9 +115,11 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, details, o
   ConfirmOptions & { onConfirm: () => void; onCancel: () => void }) {
   const { t } = useTranslation()
   return (
-    <Modal title={title} onClose={onCancel}>
+    <Modal title={title} onClose={onCancel} stacked>
       <p>{message}</p>
-      {details && details.length > 0 && <ul className="confirm-details">{details.map((d) => <li key={d}>{d}</li>)}</ul>}
+      {details && details.length > 0 && (
+        <ul className="confirm-details">{details.map((d, i) => <li key={`${i}-${d}`}>{d}</li>)}</ul>
+      )}
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>{t('common.cancel')}</button>
         <button type="button" className={danger ? 'btn btn-danger-solid' : 'btn btn-primary'} onClick={onConfirm}>
