@@ -388,6 +388,36 @@ public class AnnouncementGroup
     public Group? Group { get; set; }
 }
 
+public enum AdminAuditAction
+{
+    OwnerBootstrapped = 0,
+    ManagerInvited = 1,
+    ManagerBlocked = 2,
+    ManagerUnblocked = 3,
+    OwnerBlocked = 4,
+    OwnerUnblocked = 5,
+    AccountAdminBlocked = 6,
+    AccountAdminUnblocked = 7,
+    OwnerRoleRevoked = 8,
+    StaffDeleted = 9
+}
+
+/// <summary>
+/// Append-only staff-administration audit. Never stores passwords, tokens, or academic payloads.
+/// </summary>
+public class AdminAuditEntry
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public Guid? ActorUserId { get; set; }
+    public string? ActorEmail { get; set; }
+    public Guid? TargetUserId { get; set; }
+    public string? TargetEmail { get; set; }
+    public AdminAuditAction Action { get; set; }
+    public required string TargetKind { get; set; }
+    public string DetailsJson { get; set; } = "{}";
+}
+
 /// <summary>
 /// Append-only audit row. EntityId has no FK so history survives hard deletes.
 /// ActorUserId is null only for true system actions; deleted users keep their id and a denormalized email in ContextJson.

@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using MbaLms.Api.Controllers;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
 using MbaLms.Api.Infrastructure;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -30,6 +32,8 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<ChangeLogWriter>();
 builder.Services.AddScoped<MbaLms.Api.Controllers.Manager.GradeWriter>();
 builder.Services.AddScoped<PasswordSetupLinkService>();
+builder.Services.AddScoped<OwnerBootstrap>();
+builder.Services.AddScoped<StaffAccessService>();
 
 var emailOptions = config.GetSection(EmailOptions.Section).Get<EmailOptions>() ?? new EmailOptions();
 var emailProvider = emailOptions.Provider?.Trim() ?? "None";
@@ -98,7 +102,10 @@ builder.Services.ConfigureApplicationCookie(o =>
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPolicy(Roles.Manager, p => p.RequireRole(Roles.Manager))
-    .AddPolicy(Roles.Student, p => p.RequireRole(Roles.Student));
+    .AddPolicy(Roles.Student, p => p.RequireRole(Roles.Student))
+    .AddPolicy(Roles.Owner, p => p.RequireRole(Roles.Owner))
+    .AddPolicy(Roles.AccountAdmin, p => p.RequireRole(Roles.AccountAdmin))
+    .AddPolicy(Roles.StaffAdminPolicy, p => p.RequireRole(Roles.Owner, Roles.AccountAdmin));
 
 builder.Services.AddAntiforgery(o =>
 {
@@ -138,10 +145,16 @@ builder.Services.AddRateLimiter(o =>
         }));
 });
 
+var staffFixtureEnabled = StaffFixtureAvailability.IsEnabled(builder.Environment, config);
 builder.Services
     .AddControllers(o =>
     {
         o.Filters.Add<ValidateAntiforgeryFilter>();
+    })
+    .ConfigureApplicationPartManager(parts =>
+    {
+        if (!staffFixtureEnabled)
+            parts.FeatureProviders.Add(new ExcludeTypeControllerFeatureProvider(typeof(DevStaffFixtureController)));
     })
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .ConfigureApiBehaviorOptions(o =>
@@ -199,6 +212,43 @@ if (!app.Environment.IsProduction())
         }
         return Results.Json(new { status = "not_ready" }, statusCode: StatusCodes.Status503ServiceUnavailable);
     }).AllowAnonymous();
+}
+
+if (args is [var command, ..] && string.Equals(command, "bootstrap-owner", StringComparison.OrdinalIgnoreCase))
+{
+    if (config.GetValue("Database:MigrateOnStartup", false))
+    {
+        using var migrateScope = app.Services.CreateScope();
+        await migrateScope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+    }
+
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("OwnerBootstrap");
+    var rest = args[1..];
+    if (OwnerBootstrapCommand.HasDisallowedPasswordFlag(rest))
+    {
+        logger.LogWarning("Owner bootstrap refused: {Hint}", OwnerBootstrapCommand.PasswordFlagHint);
+        Environment.ExitCode = OwnerBootstrap.ExitInvalid;
+        return;
+    }
+
+    var email = OwnerBootstrapCommand.ParseEmail(rest);
+    var password = OwnerBootstrapCommand.PromptPassword(new ConsoleSecretPrompt());
+    var bootstrap = scope.ServiceProvider.GetRequiredService<OwnerBootstrap>();
+    var result = await bootstrap.RunAsync(email, password);
+    Environment.ExitCode = result.Status switch
+    {
+        OwnerBootstrapStatus.Created => OwnerBootstrap.ExitCreated,
+        OwnerBootstrapStatus.AlreadyExists => OwnerBootstrap.ExitAlreadyExists,
+        _ => OwnerBootstrap.ExitInvalid
+    };
+    if (result.Status == OwnerBootstrapStatus.Created)
+        logger.LogInformation("Owner account created.");
+    else if (result.Status == OwnerBootstrapStatus.AlreadyExists)
+        logger.LogWarning("Owner bootstrap refused: an Owner already exists.");
+    else
+        logger.LogWarning("Owner bootstrap refused: invalid input.");
+    return;
 }
 
 if (config.GetValue("Database:MigrateOnStartup", false))

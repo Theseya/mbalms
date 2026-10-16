@@ -122,6 +122,28 @@ public partial class AuthorizationTests(ApiFactory factory) : TestBase(factory)
     }
 
     [Fact]
+    public async Task Anonymous_student_and_manager_cannot_use_admin_endpoints()
+    {
+        var manager = await ManagerAsync();
+        var student = await StudentAsync(await CreateStudentAsync(manager, (await CreateGroupAsync(manager)).Id));
+        var anonymous = await AnonymousAsync();
+        var admin = Endpoints().Where(e => e.Pattern.StartsWith("api/admin/")).ToList();
+        Assert.NotEmpty(admin);
+
+        var failures = new List<string>();
+        foreach (var endpoint in admin)
+        {
+            var anon = await SendAsync(anonymous, endpoint);
+            if (anon.StatusCode != HttpStatusCode.Unauthorized) failures.Add($"anon {endpoint} -> {(int)anon.StatusCode}");
+            var stu = await SendAsync(student, endpoint);
+            if (stu.StatusCode != HttpStatusCode.Forbidden) failures.Add($"student {endpoint} -> {(int)stu.StatusCode}");
+            var mgr = await SendAsync(manager, endpoint);
+            if (mgr.StatusCode != HttpStatusCode.Forbidden) failures.Add($"manager {endpoint} -> {(int)mgr.StatusCode}");
+        }
+        Assert.Empty(failures);
+    }
+
+    [Fact]
     public async Task Manager_is_forbidden_on_every_student_endpoint()
     {
         var manager = await ManagerAsync();

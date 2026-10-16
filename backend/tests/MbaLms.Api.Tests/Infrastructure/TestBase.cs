@@ -2,8 +2,10 @@ using System.Net;
 using MbaLms.Api.Controllers.Manager;
 using MbaLms.Api.Data;
 using MbaLms.Api.Domain;
+using MbaLms.Api.Infrastructure;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MbaLms.Api.Tests.Infrastructure;
@@ -65,6 +67,67 @@ public abstract class TestBase
         var client = NewClient();
         await client.LoginAsync(email, password);
         return (client, email, password);
+    }
+
+    protected async Task<(ApiClient Client, Guid Id, string Email, string Password)> CreateOwnerUserAsync()
+    {
+        var email = $"{Unique("owner")}@test.local";
+        const string password = "Owner-Test-1";
+        Guid id;
+        await using (var scope = Factory.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+            var user = new AppUser { Id = Guid.CreateVersion7(), UserName = email, Email = email, EmailConfirmed = true };
+            Assert.True((await users.CreateAsync(user, password)).Succeeded);
+            Assert.True((await users.AddToRoleAsync(user, Roles.Owner)).Succeeded);
+            id = user.Id;
+        }
+        var client = NewClient();
+        await client.LoginAsync(email, password);
+        return (client, id, email, password);
+    }
+
+    protected async Task<(ApiClient Client, Guid Id, string Email, string Password)> CreateAccountAdminAsync()
+    {
+        var email = $"{Unique("acct")}@test.local";
+        const string password = "Account-Admin-1";
+        Guid id;
+        await using (var scope = Factory.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+            var user = new AppUser { Id = Guid.CreateVersion7(), UserName = email, Email = email, EmailConfirmed = true };
+            Assert.True((await users.CreateAsync(user, password)).Succeeded);
+            Assert.True((await users.AddToRoleAsync(user, Roles.AccountAdmin)).Succeeded);
+            id = user.Id;
+        }
+        var client = NewClient();
+        await client.LoginAsync(email, password);
+        return (client, id, email, password);
+    }
+
+    protected async Task<int> CountEffectiveOwnersAsync()
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = scope.ServiceProvider.GetRequiredService<AppTime>().UtcNow;
+        var ownerRoleId = await db.Roles.Where(r => r.Name == Roles.Owner).Select(r => r.Id).SingleAsync();
+        return await (
+            from u in db.Users.AsNoTracking()
+            join ur in db.UserRoles on u.Id equals ur.UserId
+            where ur.RoleId == ownerRoleId
+                  && (!u.LockoutEnabled || u.LockoutEnd == null || u.LockoutEnd <= now)
+            select u.Id).Distinct().CountAsync();
+    }
+
+    protected async Task RemoveOwnerRoleExceptAsync(params Guid[] keep)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        foreach (var user in await users.GetUsersInRoleAsync(Roles.Owner))
+        {
+            if (keep.Contains(user.Id)) continue;
+            Assert.True((await users.RemoveFromRoleAsync(user, Roles.Owner)).Succeeded);
+        }
     }
 
     protected static async Task<StudentAccount> CreateStudentAsync(ApiClient manager, Guid groupId, string lastName = "Иванов")

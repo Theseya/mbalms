@@ -36,7 +36,7 @@ docker compose -p mbalms-test -f docker-compose.test.yml --env-file .env.test up
 Локальный API (не контейнер `mbalms-api-1`):
 
 - `ConnectionStrings__Default`: Host=`127.0.0.1`, Port=`55433`, Database=`worksheet_manual`, Username из `.env.test`;
-- `Database__MigrateOnStartup=true`;
+- `Database__MigrateOnStartup=false` для долгоживущей `worksheet_manual` (у неё нет `__EFMigrationsHistory`; полный Migrate нельзя).
 - `Seed__ManagerEmail` / `Seed__ManagerPassword` — только в окружении процесса, не в git;
 - `ASPNETCORE_ENVIRONMENT=Development`, `http://127.0.0.1:5001`.
 
@@ -52,6 +52,10 @@ Development overlay (`appsettings.Development.json` + профиль `http` в `
 Фронт: Vite `http://127.0.0.1:5173` с прокси на API.
 
 Playwright: каталог `e2e/`, см. `e2e/README.md`. Карта покрытия по пунктам меню: `docs/e2e-coverage.md`. Переменная `E2E_MANAGER_PASSWORD` совпадает с seed менеджера. Для проверки ПУД после `docker restart` того же контейнера: `E2E_RESTART_TEST_DB=1`.
+
+Кабинет `/admin` на этой среде: роли Owner и AccountAdmin для Playwright выдаёт `POST /api/dev/staff-fixture` только если процесс API запущен с явным `Test:StaffFixture=true` (профиль `e2e` в `launchSettings.json`, не профиль `http`, не `appsettings*.json`, не рабочий `.env`). Имя среды Development само по себе fixture не включает. В Production обработчик не регистрируется, даже если флаг выставить. Это не сценарий production и не ручное `bootstrap-owner`. Реального Owner здесь не создаём, пока это не разрешено отдельно.
+
+Миграция `20261016124814_AddAdminAudit` в **новых** Testcontainers-БД применяется через EF `Migrate` и проверяется тестом на пустой базе. Долгоживущая `worksheet_manual` **не** ведёт `__EFMigrationsHistory`. Таблица `AdminAuditEntries` на этом стенде однажды добавлена вручную тем же DDL, что в миграции (контейнер `mbalms-worksheet-check`, не `mbalms-db-1`). Это особенность текущего тестового кластера, **не** рекомендуемый способ выкладки. На рабочую БД миграцию без отдельного разрешения выкладки не накатывать.
 
 ## Сохранность данных
 

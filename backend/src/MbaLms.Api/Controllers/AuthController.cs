@@ -30,7 +30,9 @@ public record SetPasswordRequest(
     [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(2048, ErrorMessage = FieldCodes.MaxLength)] string Token,
     [Required(ErrorMessage = FieldCodes.Required)] [MaxLength(256, ErrorMessage = FieldCodes.MaxLength)] string NewPassword);
 
-public record MeDto(Guid Id, string Email, string Role, string DisplayName, string? GroupName, string TimeZone);
+public record MeDto(
+    Guid Id, string Email, string Role, string DisplayName, string? GroupName, string TimeZone,
+    IReadOnlyList<string> Roles);
 
 public record CsrfDto(string Token);
 
@@ -169,11 +171,11 @@ public class AuthController(
 
     private async Task<MeDto> BuildMe(AppUser user)
     {
-        var roles = await users.GetRolesAsync(user);
-        var role = roles.Contains(Roles.Manager) ? Roles.Manager : Roles.Student;
+        var roles = Roles.Ordered(await users.GetRolesAsync(user));
+        var role = Roles.HomeRole(roles);
         string displayName = user.Email!;
         string? groupName = null;
-        if (role == Roles.Student)
+        if (roles.Contains(Roles.Student))
         {
             var student = await db.Students.AsNoTracking().Include(s => s.Group).FirstOrDefaultAsync(s => s.UserId == user.Id);
             if (student is not null)
@@ -182,6 +184,6 @@ public class AuthController(
                 groupName = student.Group?.Name;
             }
         }
-        return new MeDto(user.Id, user.Email!, role, displayName, groupName, time.TimeZoneId);
+        return new MeDto(user.Id, user.Email!, role, displayName, groupName, time.TimeZoneId, roles);
     }
 }

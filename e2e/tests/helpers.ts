@@ -135,6 +135,27 @@ export async function loginAsManager(page: Page) {
   await expect(page).toHaveURL(/\/manager\//)
 }
 
+export async function loginAs(page: Page, email: string, password: string, url: RegExp) {
+  await openLoginForm(page)
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Пароль').fill(password)
+  await page.getByRole('button', { name: 'Войти' }).click()
+  await expect(page).toHaveURL(url)
+}
+
+/** Isolated tests only: requires Test:StaffFixture. Never a Production bootstrap. */
+export async function createDevStaff(page: Page, email: string, password: string, role: 'Owner' | 'AccountAdmin') {
+  const csrf = await page.request.get('/api/auth/csrf')
+  expect(csrf.ok(), 'csrf for staff fixture').toBeTruthy()
+  const token = (await csrf.json() as { token: string }).token
+  const res = await page.request.post('/api/dev/staff-fixture', {
+    headers: { 'X-XSRF-TOKEN': token },
+    data: { email, password, role },
+  })
+  expect(res.ok(), `staff fixture ${role} ${res.status()}`).toBeTruthy()
+  return await res.json() as { id: string; email: string; role: string }
+}
+
 export async function loginAsStudent(page: Page, email: string, password = 'E2e-Student-1') {
   await openLoginForm(page)
   await page.getByLabel('Email').fill(email)
@@ -143,14 +164,54 @@ export async function loginAsStudent(page: Page, email: string, password = 'E2e-
   await expect(page).toHaveURL(/\/student/)
 }
 
-/** /login redirects an existing session to a cabinet; wait and sign out first. */
+/** End the current session so /login shows the form instead of redirecting to a cabinet. */
 export async function openLoginForm(page: Page) {
+  const csrf = await page.request.get('/api/auth/csrf')
+  if (csrf.ok()) {
+    const token = (await csrf.json() as { token: string }).token
+    await page.request.post('/api/auth/logout', { headers: { 'X-XSRF-TOKEN': token } }).catch(() => undefined)
+  }
+  await page.context().clearCookies()
   await page.goto('/login')
   const email = page.getByLabel('Email')
   const logout = page.getByRole('button', { name: 'Выйти' })
   await expect(email.or(logout)).toBeVisible()
-  if (await logout.isVisible()) await logout.click()
+  if (await logout.isVisible()) {
+    await logout.click()
+    await expect(logout).toHaveCount(0)
+  }
+  await expect(page).toHaveURL(/\/login/)
   await expect(email).toBeVisible()
+  await expect(page.getByLabel('Пароль')).toBeVisible()
+}
+
+export async function staffList(page: Page, search = '') {
+  const res = await page.request.get(`/api/admin/staff?search=${encodeURIComponent(search)}&page=1&pageSize=200`)
+  expect(res.ok(), `staff list ${res.status()}`).toBeTruthy()
+  return await res.json() as { items: { id: string; email: string; roles: string[]; locked: boolean }[]; total: number }
+}
+
+/** Staff table has no search; leftover e2e rows can fill page 1. Uses existing pagination only. */
+export async function staffRow(page: Page, email: string) {
+  await expect(page.getByRole('table')).toBeVisible()
+  const rowFor = () =>
+    page.getByRole('row').filter({ has: page.getByRole('cell', { name: email, exact: true }) })
+  const next = page.getByRole('navigation', { name: 'Страницы' }).getByRole('button', { name: 'Вперёд' })
+  for (let i = 0; i < 40; i++) {
+    const row = rowFor()
+    if (await row.count()) {
+      await expect(row.getByRole('cell', { name: email, exact: true })).toBeVisible()
+      return row
+    }
+    if ((await next.count()) === 0 || !(await next.isEnabled())) break
+    const firstEmail = page.locator('tbody tr td').first()
+    const before = (await firstEmail.textContent()) ?? ''
+    await next.click()
+    await expect(firstEmail).not.toHaveText(before)
+  }
+  const row = rowFor()
+  await expect(row.getByRole('cell', { name: email, exact: true })).toBeVisible()
+  return row
 }
 
 export type SheetNames = {

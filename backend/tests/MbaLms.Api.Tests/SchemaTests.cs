@@ -17,7 +17,7 @@ public class SchemaTests(ApiFactory factory) : TestBase(factory)
         "Surveys", "SurveyQuestions", "SurveyQuestionOptions", "SurveyResponses", "SurveyAnswers", "Notifications",
         "SurveyTemplates", "SurveyTemplateQuestions", "SurveyTemplateOptions",
         "Announcements", "AnnouncementGroups", "ChangeLogEntries",
-        "AspNetUsers", "AspNetRoles", "AspNetUserRoles"
+        "AspNetUsers", "AspNetRoles", "AspNetUserRoles", "AdminAuditEntries"
     ];
 
     private record Graph(Group Group, Student Student, Teacher Teacher, Discipline Discipline, AcademicPeriod Period);
@@ -46,6 +46,39 @@ public class SchemaTests(ApiFactory factory) : TestBase(factory)
 
             await db.GetService<IMigrator>().MigrateAsync(Migration.InitialDatabase);
             Assert.Equal(["__EFMigrationsHistory"], await TablesAsync(db));
+        }
+        finally
+        {
+            await using var admin = new NpgsqlConnection(Factory.ConnectionString);
+            await admin.OpenAsync();
+            await using var drop = new NpgsqlCommand($"DROP DATABASE \"{builder.Database}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task AddAdminAudit_applies_once_on_an_empty_database()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(Factory.ConnectionString) { Database = $"audit_{Guid.NewGuid():N}" };
+        await using (var admin = new NpgsqlConnection(Factory.ConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var create = new NpgsqlCommand($"CREATE DATABASE \"{builder.Database}\"", admin);
+            await create.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            await using var db = Context(builder.ConnectionString);
+            await db.Database.MigrateAsync();
+            var applied = (await db.Database.GetAppliedMigrationsAsync()).ToList();
+            Assert.Contains("20261016124814_AddAdminAudit", applied);
+            Assert.Empty(await db.Database.GetPendingMigrationsAsync());
+            Assert.Contains("AdminAuditEntries", await TablesAsync(db));
+
+            await db.Database.MigrateAsync();
+            Assert.Equal(applied, (await db.Database.GetAppliedMigrationsAsync()).ToList());
+            Assert.Empty(await db.Database.GetPendingMigrationsAsync());
         }
         finally
         {

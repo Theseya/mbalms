@@ -14,7 +14,7 @@
 dotnet run --project backend/src/MbaLms.Api --launch-profile e2e
 ```
 
-Профиль задаёт `RateLimiting__LoginPermitsPerMinute=1000` и `RateLimiting__PasswordMailPermitsPerWindow=1000`. Обычный `dotnet run --launch-profile http` и Production остаются на 20 логинов / мин и 5 писем / 15 мин.
+Профиль задаёт `RateLimiting__LoginPermitsPerMinute=1000`, `RateLimiting__PasswordMailPermitsPerWindow=1000`, `Auth__SessionValidationInterval=00:00:00` (чтобы блокировка сотрудника сразу отзывала cookie) и `Test__StaffFixture=true` (явный тестовый флаг; в профиле `http`, `appsettings*.json` и Production его нет). Обычный `dotnet run --launch-profile http` и Production остаются на 20 логинов / мин, 5 писем / 15 мин и интервал проверки сессии 1 минута; fixture там выключен. Рабочий `.env` и выкладку не использовать. Connection string процесса должен указывать на `127.0.0.1:55433` / `worksheet_manual` (`docs/test-environment.md`). На эту долгоживущую тестовую БД нельзя включать `Database:MigrateOnStartup`: в ней нет `__EFMigrationsHistory`.
 
 ## Восемь основных путей
 
@@ -54,7 +54,8 @@ npx playwright test tests/program-pdf.spec.ts
 | `tests/survey-templates.spec.ts` | создание шаблона и черновика опроса из шаблона |
 | `tests/announcements-student.spec.ts` | опубликованное объявление видно только студенту своей группы |
 | `tests/manager-account.spec.ts` | смена пароля тестового менеджера и повторный вход (пароль восстанавливается) |
+| `tests/admin.spec.ts` | синтетический Owner (`Test:StaffFixture`, не `bootstrap-owner`) входит в `/admin`, приглашает менеджера через outbox, **блокирует кнопкой в таблице** (пагинация, не API-запрос), открытая сессия теряет доступ; Owner без учебной роли не открывает учебные кабинеты; AccountAdmin не действует на Owner/другого AccountAdmin; seed-менеджер не открывает админку |
 
 Файлы `_tmp_*.spec.ts` в сохранённый набор не входят (`testIgnore` в `playwright.config.ts`).
 
-Карта по пунктам меню: полный набор **20 passed** до финального уточнения локаторов; после уточнения повторно прошли `grades.spec.ts` и `worksheet-coverage.spec.ts`; полный набор после уточнения заново не запускался. Оставшиеся ограничения: `docs/e2e-coverage.md`.
+Карта: `docs/e2e-coverage.md`. Выборочный `npx playwright test tests/admin.spec.ts` не заменяет полный `npx playwright test`.

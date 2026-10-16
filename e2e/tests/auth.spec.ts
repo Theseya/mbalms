@@ -29,6 +29,7 @@ test('student cannot open manager pages', async ({ page }) => {
   await groupDialog.getByLabel('Название').fill(groupName)
   await groupDialog.getByRole('button', { name: 'Сохранить' }).click()
   await expect(groupDialog).toBeHidden()
+  await page.getByLabel('Поиск').fill(groupName)
   await expect(page.getByRole('link', { name: groupName })).toBeVisible()
 
   await page.goto('/manager/students')

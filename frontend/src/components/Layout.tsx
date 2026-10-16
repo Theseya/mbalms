@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { hasRole, hasStaffAdmin } from '../auth/roles'
 import { LANGUAGES, currentLanguage, setLanguage, type Language } from '../i18n'
 import { onUnreadChanged } from '../lib/unread'
 
@@ -48,6 +49,11 @@ const studentLinks = [
   ['/student/announcements', 'nav.announcements'],
 ] as const
 
+const adminLinks = [
+  ['/admin/staff', 'nav.staff'],
+  ['/admin/audit', 'nav.adminAudit'],
+] as const
+
 export function Layout() {
   const { t } = useTranslation()
   const { me, logout } = useAuth()
@@ -55,8 +61,8 @@ export function Layout() {
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [unread, setUnread] = useState(0)
-  const isStudent = me?.role === 'Student'
-  const links = isStudent ? studentLinks : managerLinks
+  const isStudent = !!me && hasRole(me, 'Student') && !hasStaffAdmin(me) && !hasRole(me, 'Manager')
+  const links = me && hasStaffAdmin(me) ? adminLinks : isStudent ? studentLinks : managerLinks
 
   useEffect(() => {
     if (!isStudent) return

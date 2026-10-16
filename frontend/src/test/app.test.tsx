@@ -6,6 +6,7 @@ import type { Grade, GradeHistoryEntry, SurveyQuestion } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { setLanguage } from '../i18n'
 import { parseGrade } from '../lib/grades'
+import { homePath } from '../auth/roles'
 import { LoginPage } from '../pages/LoginPage'
 import { GradesPage } from '../pages/manager/GradesPage'
 import { validateAnswers } from '../lib/surveyValidation'
@@ -46,6 +47,20 @@ describe('validateAnswers', () => {
 
   it('accepts a complete answer with optional text omitted', () => {
     expect(validateAnswers(questions, { q1: { intValue: 3 }, q2: { optionId: 'o1' } })).toEqual({})
+  })
+})
+
+describe('homePath', () => {
+  const base = { id: 'u1', email: 'a@test.local', displayName: 'A', groupName: null, timeZone: 'Europe/Moscow' } as const
+
+  it('sends Owner and AccountAdmin to the admin cabinet', () => {
+    expect(homePath({ ...base, role: 'Owner', roles: ['Owner'] })).toBe('/admin/staff')
+    expect(homePath({ ...base, role: 'AccountAdmin', roles: ['AccountAdmin'] })).toBe('/admin/staff')
+  })
+
+  it('keeps Manager and Student on their cabinets', () => {
+    expect(homePath({ ...base, role: 'Manager', roles: ['Manager'] })).toBe('/manager/groups')
+    expect(homePath({ ...base, role: 'Student', roles: ['Student'] })).toBe('/student')
   })
 })
 

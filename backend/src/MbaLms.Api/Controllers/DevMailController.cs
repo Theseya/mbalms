@@ -14,7 +14,7 @@ public record CapturedEmailDto(
 /// </summary>
 [ApiController]
 [Route("api/dev/mail")]
-[Authorize(Policy = Roles.Manager)]
+[Authorize(Roles = $"{Roles.Manager},{Roles.Owner},{Roles.AccountAdmin}")]
 public class DevMailController(IEmailOutbox outbox, IHostEnvironment env) : ControllerBase
 {
     private void EnsureDevOnly()

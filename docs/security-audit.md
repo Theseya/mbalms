@@ -13,7 +13,7 @@
 
 ## Предварительные выводы чтения кода
 
-Роли входа только Manager и Student. FallbackPolicy требует аутентификацию; публичны CSRF, login, forgot/set-password, `/health`; `/ready` монтируется только вне Production.
+Роли входа: Owner, AccountAdmin, Manager, Student. FallbackPolicy требует аутентификацию; публичны CSRF, login, forgot/set-password, `/health`; `/ready` монтируется только вне Production. `/api/admin/*` — Owner или AccountAdmin; учебные API без учебных ролей закрыты. Первый Owner не создаётся при обычном старте.
 
 Студенческие API якорятся на профиле текущего пользователя: свои опубликованные оценки, расписание своей группы, видимые объявления и опросы, ПУД по расписанию или своей опубликованной оценке. Менеджер видит и меняет всю базу — изоляции между менеджерами нет (модель продукта).
 
@@ -98,6 +98,40 @@ dotnet test "backend\tests\MbaLms.Api.Tests\MbaLms.Api.Tests.csproj" --filter "F
 ## Непроверенные области
 
 MFA, HTTPS/HSTS, внутренний TLS, CSP, lockout ровно на 5-й vs 6-й неверный ввод как отдельный факт, rate limit **20/мин** как в Production, обход `X-Forwarded-For`, zip-bomb/polyglot PDF, антивирус, over-post на всех остальных DTO, уведомления о входе, смена email студентом (API нет), журналы security-событий (V16), CVE зависимостей, рабочий сайт, дампы и права на файлы хоста.
+
+## Локальное завершение `/admin` (без выкладки)
+
+Рабочий сайт, рабочая БД, SMTP, `.env` и контейнеры `mbalms` не использовались. Playwright этого этапа ходил в изолированные Vite `:5173` и API `:5001` против `worksheet_manual` на `127.0.0.1:55433`.
+
+Найденная проблема: приглашение менеджера в e2e отвечало 500 (`relation "AdminAuditEntries" does not exist`). `worksheet_manual` не ведёт `__EFMigrationsHistory`; полный `MigrateOnStartup` на неё не включался. Таблица создана тем же DDL, что в `AddAdminAudit`, только в контейнере `mbalms-worksheet-check`. Живая БД не менялась.
+
+### Уточнение 433 / 192 и Playwright 23
+
+Это **не** один вид тестов. API 433 и frontend 192 — предыдущий полный прогон этого этапа (после него API/Vitest не перезапускались). Playwright 23 — отдельный финальный прогон после восстановления блокировки через UI.
+
+| Число | Что это | Команда | Среда |
+|---|---|---|---|
+| **433** | xUnit + WebApplicationFactory + Testcontainers PostgreSQL | `dotnet test "backend\tests\MbaLms.Api.Tests\MbaLms.Api.Tests.csproj"` | временный `postgres:17-alpine`, не `:8080` и не `worksheet_manual` |
+| **192** | Vitest + React Testing Library | `cd frontend; npm test` | **jsdom**, не Chromium |
+| **23** | Playwright Chromium после восстановления кнопки «Заблокировать» | `cd e2e; npx playwright test` | изолированные Vite `:5173` и API `:5001` против `worksheet_manual`; без `_tmp_*`, один прогон |
+
+Frontend-192 нельзя называть браузерными тестами. Выборочный `tests/admin.spec.ts` полным прогоном не является. Прогон 23 с блоком через API UI-блокировку не покрывал.
+
+### Последний Owner — имеющиеся тесты, не будущие
+
+Класс `AdminAccessTests`:
+
+| Тест | Что проверяет | Чего нет |
+|---|---|---|
+| `Last_owner_cannot_be_blocked_revoked_or_deleted` | последовательно 409 `last_owner` на block, revoke-owner и DELETE | — |
+| `Parallel_block_of_two_owners_keeps_an_effective_owner` | два одновременных **block**; ≥1 действующий Owner | — |
+| `Parallel_revoke_of_two_owners_keeps_an_effective_owner` | два одновременных revoke-owner; ≥1 Owner в БД | — |
+| `Parallel_delete_of_two_owners_keeps_an_effective_owner` | два одновременных DELETE; ≥1 Owner, учётки на месте | — |
+| `Parallel_mixed_block_revoke_delete_keeps_an_effective_owner` | смесь block/revoke/delete; ≥1 Owner | — |
+
+DELETE Owner **не** готовая функция удаления: при наличии другого Owner ответ 403 `protected_account`, учётка не удаляется. В UI кнопок снятия роли и удаления нет.
+
+`POST /api/dev/staff-fixture` включается только явным `Test:StaffFixture` и не регистрируется в Production (флаг в `appsettings*.json` и рабочем `.env` отсутствует). Имя среды Development само по себе обработчик не открывает.
 
 ## Следующий приоритет
 

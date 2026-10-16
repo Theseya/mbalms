@@ -36,6 +36,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementGroup> AnnouncementGroups => Set<AnnouncementGroup>();
     public DbSet<ChangeLogEntry> ChangeLogEntries => Set<ChangeLogEntry>();
+    public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder builder)
     {
@@ -304,6 +305,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasKey(x => new { x.AnnouncementId, x.GroupId });
             e.HasOne(x => x.Group).WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GroupId);
+        });
+
+        b.Entity<AdminAuditEntry>(e =>
+        {
+            e.ToTable("AdminAuditEntries");
+            e.Property(x => x.ActorEmail).HasMaxLength(256);
+            e.Property(x => x.TargetEmail).HasMaxLength(256);
+            e.Property(x => x.TargetKind).HasMaxLength(32);
+            e.Property(x => x.DetailsJson).HasColumnType("jsonb");
+            e.HasIndex(x => new { x.OccurredAt, x.Id });
+            e.HasIndex(x => x.TargetKind);
+            e.HasIndex(x => x.ActorUserId);
+            e.HasIndex(x => x.TargetUserId);
         });
 
         b.Entity<ChangeLogEntry>(e =>

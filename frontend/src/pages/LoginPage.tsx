@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { homePath } from '../auth/roles'
 import { LanguageSwitcher } from '../components/Layout'
 import { ErrorBanner, Field } from '../components/ui'
 import { toApiError } from '../lib/useLoad'
@@ -16,7 +17,7 @@ export function LoginPage() {
   const [error, setError] = useState<ApiError | null>(null)
   const [busy, setBusy] = useState(false)
 
-  if (me) return <Navigate to={me.role === 'Manager' ? '/manager/groups' : '/student'} replace />
+  if (me) return <Navigate to={homePath(me)} replace />
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -24,7 +25,7 @@ export function LoginPage() {
     setError(null)
     try {
       const user = await login(email, password)
-      navigate(user.role === 'Manager' ? '/manager/groups' : '/student', { replace: true })
+      navigate(homePath(user), { replace: true })
     } catch (err) {
       setError(toApiError(err))
     } finally {

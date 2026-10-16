@@ -20,7 +20,9 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "Email__PublicBaseUrl": "http://127.0.0.1:5173",
         "RateLimiting__LoginPermitsPerMinute": "1000",
-        "RateLimiting__PasswordMailPermitsPerWindow": "1000"
+        "RateLimiting__PasswordMailPermitsPerWindow": "1000",
+        "Auth__SessionValidationInterval": "00:00:00",
+        "Test__StaffFixture": "true"
       }
     }
   }

@@ -25,7 +25,7 @@ public static class DbSeeder
         var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SeedOptions>>().Value;
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DbSeeder));
 
-        foreach (var role in new[] { Roles.Manager, Roles.Student })
+        foreach (var role in Roles.All)
         {
             if (!await roles.RoleExistsAsync(role))
                 await roles.CreateAsync(new IdentityRole<Guid>(role));

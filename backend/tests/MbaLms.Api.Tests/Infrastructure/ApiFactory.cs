@@ -58,6 +58,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Email:PublicBaseUrl", "http://127.0.0.1:5173");
         builder.UseSetting("Email:TokenLifespan", "01:00:00");
         builder.UseSetting("Auth:SessionValidationInterval", "00:00:00");
+        builder.UseSetting(StaffFixtureAvailability.ConfigKey, "true");
         builder.UseSetting("Documents:StoragePath", DocumentsPath);
         builder.UseSetting("Documents:MaxProgramPdfBytes", MaxProgramPdfBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureLogging(logging =>

@@ -29,6 +29,12 @@ public static class ErrorCodes
     public const string PublishedChangeNotConfirmed = "published_change_not_confirmed";
     public const string CsrfFailed = "csrf_failed";
     public const string Forbidden = "forbidden";
+    /// <summary>AccountAdmin tried to act on Owner or another AccountAdmin.</summary>
+    public const string ProtectedAccount = "protected_account";
+    /// <summary>The action would leave the system without an effective Owner.</summary>
+    public const string LastOwner = "last_owner";
+    /// <summary>Initial Owner bootstrap refused because an Owner already exists.</summary>
+    public const string OwnerAlreadyExists = "owner_already_exists";
     public const string ServerError = "server_error";
     public const string ImportExpired = "import_expired";
     public const string ImportAlreadyUsed = "import_already_used";
@@ -108,6 +114,7 @@ public class AppException(int status, string code, IDictionary<string, string[]>
     public object? Details { get; } = details;
 
     public static AppException NotFound() => new(StatusCodes.Status404NotFound, ErrorCodes.NotFound);
+    public static AppException Forbidden() => new(StatusCodes.Status403Forbidden, ErrorCodes.Forbidden);
     public static AppException Conflict(string code, object? details = null) =>
         new(StatusCodes.Status409Conflict, code, details: details);
     public static AppException BadRequest(string code) => new(StatusCodes.Status400BadRequest, code);

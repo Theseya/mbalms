@@ -1,4 +1,4 @@
-export type Role = 'Manager' | 'Student'
+export type Role = 'Owner' | 'AccountAdmin' | 'Manager' | 'Student'
 export type GroupStatus = 'Active' | 'Archived'
 export type LessonFormat = 'Offline' | 'Online' | 'Hybrid'
 export type LessonStatus = 'Scheduled' | 'Cancelled'
@@ -27,6 +27,23 @@ export interface Me {
   displayName: string
   groupName: string | null
   timeZone: string
+  roles?: Role[]
+}
+
+export interface StaffMember {
+  id: string
+  email: string
+  roles: Role[]
+  locked: boolean
+}
+
+export interface AdminAuditEntry {
+  id: string
+  occurredAt: string
+  actorEmail: string | null
+  targetEmail: string | null
+  action: string
+  targetKind: string
 }
 
 export interface PagedResult<T> {

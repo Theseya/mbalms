@@ -2,8 +2,47 @@ namespace MbaLms.Api.Domain;
 
 public static class Roles
 {
+    public const string Owner = "Owner";
+    public const string AccountAdmin = "AccountAdmin";
     public const string Manager = "Manager";
     public const string Student = "Student";
+
+    /// <summary>Owner or AccountAdmin — account-administration cabinet, not academic data.</summary>
+    public const string StaffAdminPolicy = "StaffAdmin";
+
+    public static readonly string[] All = [Owner, AccountAdmin, Manager, Student];
+    public static readonly string[] Staff = [Owner, AccountAdmin, Manager];
+
+    public static string HomeRole(IEnumerable<string> roles)
+    {
+        var set = roles as ISet<string> ?? roles.ToHashSet(StringComparer.Ordinal);
+        if (set.Contains(Owner)) return Owner;
+        if (set.Contains(AccountAdmin)) return AccountAdmin;
+        if (set.Contains(Manager)) return Manager;
+        return Student;
+    }
+
+    public static List<string> Ordered(IEnumerable<string> roles)
+    {
+        var set = roles as ISet<string> ?? roles.ToHashSet(StringComparer.Ordinal);
+        return All.Where(set.Contains).ToList();
+    }
+
+    /// <summary>Highest staff kind, or null if the user is not staff.</summary>
+    public static string? StaffKind(IEnumerable<string> roles)
+    {
+        var set = roles as ISet<string> ?? roles.ToHashSet(StringComparer.Ordinal);
+        if (set.Contains(Owner)) return Owner;
+        if (set.Contains(AccountAdmin)) return AccountAdmin;
+        if (set.Contains(Manager)) return Manager;
+        return null;
+    }
+
+    public static bool IsProtectedFromAccountAdmin(IEnumerable<string> roles)
+    {
+        var set = roles as ISet<string> ?? roles.ToHashSet(StringComparer.Ordinal);
+        return set.Contains(Owner) || set.Contains(AccountAdmin);
+    }
 }
 
 public enum GroupStatus

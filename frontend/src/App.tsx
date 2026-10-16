@@ -2,8 +2,11 @@ import type { ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import type { Role } from './api/types'
 import { useAuth } from './auth/AuthContext'
+import { hasRole, homePath } from './auth/roles'
 import { Layout } from './components/Layout'
 import { Loading } from './components/ui'
+import { AdminAuditPage } from './pages/admin/AdminAuditPage'
+import { StaffPage } from './pages/admin/StaffPage'
 import { AccountPage } from './pages/AccountPage'
 import { DevMailPreviewPage } from './pages/DevMailPreviewPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
@@ -31,11 +34,12 @@ import {
 import { SurveyTakePage } from './pages/student/SurveyTakePage'
 
 /** UI-level guard only; every endpoint is protected on the server. */
-function RequireRole({ role, children }: { role?: Role; children: ReactNode }) {
+function RequireRole({ role, anyOf, children }: { role?: Role; anyOf?: Role[]; children: ReactNode }) {
   const { me } = useAuth()
   if (me === undefined) return <Loading />
   if (me === null) return <Navigate to="/login" replace />
-  if (role && me.role !== role) return <Navigate to={me.role === 'Manager' ? '/manager/groups' : '/student'} replace />
+  const allowed = anyOf ?? (role ? [role] : undefined)
+  if (allowed && !allowed.some((r) => hasRole(me, r))) return <Navigate to={homePath(me)} replace />
   return <>{children}</>
 }
 
@@ -43,7 +47,7 @@ function Home() {
   const { me } = useAuth()
   if (me === undefined) return <Loading />
   if (me === null) return <Navigate to="/login" replace />
-  return <Navigate to={me.role === 'Manager' ? '/manager/groups' : '/student'} replace />
+  return <Navigate to={homePath(me)} replace />
 }
 
 export default function App() {
@@ -54,10 +58,13 @@ export default function App() {
       <Route path="/set-password" element={<SetPasswordPage />} />
       <Route element={<RequireRole><Layout /></RequireRole>}>
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/admin" element={<RequireRole anyOf={['Owner', 'AccountAdmin']}><Navigate to="/admin/staff" replace /></RequireRole>} />
+        <Route path="/admin/staff" element={<RequireRole anyOf={['Owner', 'AccountAdmin']}><StaffPage /></RequireRole>} />
+        <Route path="/admin/audit" element={<RequireRole anyOf={['Owner', 'AccountAdmin']}><AdminAuditPage /></RequireRole>} />
         <Route path="/manager" element={<RequireRole role="Manager"><Navigate to="/manager/groups" replace /></RequireRole>} />
         <Route path="/manager/groups" element={<RequireRole role="Manager"><GroupsPage /></RequireRole>} />
         <Route path="/manager/students" element={<RequireRole role="Manager"><StudentsPage /></RequireRole>} />
-        <Route path="/dev/mail/:id" element={<RequireRole role="Manager"><DevMailPreviewPage /></RequireRole>} />
+        <Route path="/dev/mail/:id" element={<RequireRole anyOf={['Manager', 'Owner', 'AccountAdmin']}><DevMailPreviewPage /></RequireRole>} />
         <Route path="/manager/teachers" element={<RequireRole role="Manager"><TeachersPage /></RequireRole>} />
         <Route path="/manager/disciplines" element={<RequireRole role="Manager"><DisciplinesPage /></RequireRole>} />
         <Route path="/manager/periods" element={<RequireRole role="Manager"><PeriodsPage /></RequireRole>} />
