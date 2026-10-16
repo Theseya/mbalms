@@ -1,6 +1,10 @@
 using System.Net;
 using MbaLms.Api.Controllers.Manager;
+using MbaLms.Api.Data;
+using MbaLms.Api.Domain;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MbaLms.Api.Tests.Infrastructure;
 
@@ -46,6 +50,22 @@ public abstract class TestBase
 
     protected static Task<GroupDto> CreateGroupAsync(ApiClient manager) =>
         manager.PostJsonAsync<GroupDto>("/api/manager/groups", new { name = Unique("Группа") }, HttpStatusCode.Created);
+
+    protected async Task<(ApiClient Client, string Email, string Password)> CreateManagerAsync()
+    {
+        var email = $"{Unique("mgr")}@test.local";
+        const string password = "Manager-Test-2";
+        await using (var scope = Factory.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+            var user = new AppUser { Id = Guid.CreateVersion7(), UserName = email, Email = email, EmailConfirmed = true };
+            Assert.True((await users.CreateAsync(user, password)).Succeeded);
+            Assert.True((await users.AddToRoleAsync(user, Roles.Manager)).Succeeded);
+        }
+        var client = NewClient();
+        await client.LoginAsync(email, password);
+        return (client, email, password);
+    }
 
     protected static async Task<StudentAccount> CreateStudentAsync(ApiClient manager, Guid groupId, string lastName = "Иванов")
     {
